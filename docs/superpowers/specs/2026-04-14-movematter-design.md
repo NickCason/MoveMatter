@@ -126,7 +126,7 @@ True Smoothed Particle Hydrodynamics with kernel functions (poly6/spiky), pressu
 
 ### Simulation Viewport
 - Horizontal track with container moving along it (PixiJS canvas)
-- Container interior shows PBD particles in liquid mode (metaball render) or particulate mode (individual circles with angle-of-repose damping)
+- Container interior shows PBD particles in liquid mode (metaball-style render: particles blended into a smooth fluid surface using a threshold on summed influence fields — Canvas 2D or PixiJS filter) or particulate mode (individual circles; high friction + restitution PBD params produce natural angle-of-repose piling)
 - Container dimensions configurable: width, height, fill level %
 - Material type selector: water, oil, dry powder, coarse granular — each maps to a PBDParams preset
 
@@ -273,6 +273,10 @@ interface MoveStep {
   accelJerk: number;         // mm/s³ (0 = trapezoidal)
   decelJerk: number;         // mm/s³
   profileType: 'trapezoidal' | 'scurve' | 'constant';
+  // profileType is the primary control:
+  //   'trapezoidal' — linear accel/decel ramps; accelJerk + decelJerk are 0 and disabled in UI
+  //   'scurve'      — jerk-limited ramps; accelJerk + decelJerk are editable
+  //   'constant'    — no accel/decel phase; move runs at maxVelocity immediately (ideal/theoretical)
 }
 
 interface DelayStep {
@@ -322,10 +326,10 @@ interface SimState {
 }
 
 interface PlotBuffer {
-  times: number[];           // rolling 30s window
-  positions: number[];
-  velocities: number[];
-  accels: number[];
+  times: number[];           // ms from program start, rolling 30s window
+  positions: number[];       // mm
+  velocities: number[];      // mm/s
+  accels: number[];          // mm/s²
 }
 
 interface UIState {
@@ -339,7 +343,7 @@ interface UIState {
 - `Float32Array` for particle state — avoids GC pressure at 60fps, directly transferable to a Web Worker later
 - `PBDParams` always present even for presets — presets populate it with known-good values; `custom` exposes fields in UI (stretch)
 - `version: 1` at root — future-proofs file format for migrations
-- `accelJerk = 0` encodes trapezoidal naturally; `profileType` is a UI hint
+- `profileType` is the source of truth; it controls which jerk fields are active in the UI and how `MotionInterpolator` builds the curve. `accelJerk`/`decelJerk` are stored as 0 for trapezoidal and ignored by the interpreter.
 
 ---
 
