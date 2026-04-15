@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useStore } from '../store'
 import type { MoveStep } from '../types'
 
@@ -20,11 +20,17 @@ function NumInput({
   // Sync local display when store value changes externally (e.g. file load)
   const displayVal = document.activeElement?.id === `${stepId}-${field}` ? localVal : String(value)
 
+  useEffect(() => {
+    if (document.activeElement?.id !== `${stepId}-${field}`) {
+      setLocalVal(String(value))
+    }
+  }, [value, stepId, field])
+
   function handleBlur() {
     const parsed = parseFloat(localVal)
     const committed = isNaN(parsed) ? 0 : parsed
     setLocalVal(String(committed))
-    updateStep(stepId, { [field]: committed } as any)
+    updateStep(stepId, { [field]: committed } as Partial<MoveStep>)
   }
 
   return (
