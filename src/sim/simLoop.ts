@@ -249,7 +249,8 @@ export function pauseReplayLoop(): void {
 // then freezes and sets status='idle'.
 
 let settlingRafId: number | null = null
-const KE_THRESHOLD = 0.1  // mean per-particle KE (mm²/s²) to stop settling
+const KE_THRESHOLD = 0.1        // mean per-particle KE (mm²/s²) to stop settling
+const MAX_SETTLING_FRAMES = 600 // 10s ceiling at 60fps — guarantees status reaches 'idle'
 
 export function startSettlingLoop(
   store: StoreApi<AppStore>,
@@ -263,6 +264,7 @@ export function startSettlingLoop(
   const state = store.getState()
   const { container, material } = state
   let currentParticles = initialParticles
+  let settlingFrame = 0
 
   function tick() {
     currentParticles = pbdStepMulti({
@@ -274,6 +276,7 @@ export function startSettlingLoop(
     })
 
     particleStateRef.particles = currentParticles
+    settlingFrame++
 
     // Compute mean per-particle KE
     const n = currentParticles.length / STRIDE
@@ -285,7 +288,7 @@ export function startSettlingLoop(
     }
     const meanKE = n > 0 ? ke / n : 0
 
-    if (meanKE < KE_THRESHOLD) {
+    if (meanKE < KE_THRESHOLD || settlingFrame >= MAX_SETTLING_FRAMES) {
       settlingRafId = null
       store.setState((s) => ({ playback: { ...s.playback, status: 'idle' } }))
       return

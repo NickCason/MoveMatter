@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useStore } from '../store'
 import type { MoveStep } from '../types'
 import { computeAchievable } from '../sim/motionInterpolator'
@@ -62,11 +62,15 @@ export function MoveRow({ step, error, dragHandleProps, rowDropProps, startPosit
   const removeStep = useStore((s) => s.removeStep)
   const isScurve = step.profileType === 'scurve'
   const isConstant = step.profileType === 'constant'
-  const achieved = isScurve ? computeAchievable(step) : null
+  const achieved = useMemo(
+    () => isScurve ? computeAchievable(step) : null,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [step.profileType, step.displacement, step.maxVelocity, step.acceleration, step.deceleration, step.accelJerk, step.decelJerk],
+  )
 
   const maxPos = axisLength - containerWidthMm
   const endPositionMm = startPositionMm + step.displacement
-  const inBounds = endPositionMm >= 0 && endPositionMm <= maxPos
+  const inBounds = startPositionMm >= 0 && startPositionMm <= maxPos && endPositionMm >= 0 && endPositionMm <= maxPos
   const remainingMm = maxPos - startPositionMm
 
   return (
