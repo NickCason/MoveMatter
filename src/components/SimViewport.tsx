@@ -39,13 +39,13 @@ export function SimViewport() {
       const particleG = new Graphics()
       app.stage.addChild(trackG, containerG, particleG)
 
-      blurFilter = new BlurFilter({ strength: 5, quality: 2 })
+      blurFilter = new BlurFilter({ strength: 3, quality: 3 })
       thresholdFilter = new ColorMatrixFilter()
       thresholdFilter.matrix = [
         1, 0, 0, 0, 0,
         0, 1, 0, 0, 0,
         0, 0, 1, 0, 0,
-        0, 0, 0, 6, -2,
+        0, 0, 0, 10, -4,
       ]
 
       let prevMaterialPreset: string | null = null

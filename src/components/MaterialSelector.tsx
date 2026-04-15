@@ -38,6 +38,28 @@ export function MaterialSelector() {
           </button>
         ))}
       </div>
+      {material.preset === 'oil' && (
+        <label style={{
+          display: 'flex', alignItems: 'center', gap: 6,
+          fontSize: 11, color: 'var(--color-text-muted)', marginTop: 2,
+        }}>
+          Viscosity
+          <input
+            type="range"
+            min={0.05}
+            max={0.80}
+            step={0.01}
+            value={material.params.viscosity}
+            onChange={(e) =>
+              setMaterial({ preset: 'oil', params: { ...material.params, viscosity: parseFloat(e.target.value) } })
+            }
+            style={{ flex: 1 }}
+          />
+          <span style={{ fontSize: 11, minWidth: 32, textAlign: 'right' }}>
+            {material.params.viscosity.toFixed(2)}
+          </span>
+        </label>
+      )}
     </div>
   )
 }

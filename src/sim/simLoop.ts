@@ -1,5 +1,5 @@
 import { buildProgram } from './motionInterpolator'
-import { initParticles, pbdStep, STRIDE } from './pbdSolver'
+import { initParticles, pbdStepMulti, STRIDE } from './pbdSolver'
 import type { AppStore } from '../store'
 import type { StoreApi } from 'zustand'
 import type { MaterialConfig, ContainerConfig } from '../types'
@@ -55,7 +55,7 @@ export function runSettlingPass(store: StoreApi<AppStore>): void {
   const { container, material } = store.getState()
   let particles = initParticles(container, material.params)
   for (let i = 0; i < SETTLING_TICKS; i++) {
-    particles = pbdStep({ particles, container, params: material.params, dt: SETTLE_DT, containerAccelX: 0 })
+    particles = pbdStepMulti({ particles, container, params: material.params, dt: SETTLE_DT, containerAccelX: 0 })
   }
   particleStateRef.particles = particles
   particleStateRef.containerPositionMm = 0
@@ -106,7 +106,7 @@ export async function computeFrameBuffer(store: StoreApi<AppStore>): Promise<voi
     const timeS = i * DT
     const { pos, vel, accel } = compiled.eval(timeS)
 
-    particles = pbdStep({
+    particles = pbdStepMulti({
       particles,
       container: state.container,
       params: state.material.params,

@@ -2,19 +2,19 @@ import type { PBDParams } from '../types'
 
 export const MATERIAL_PRESETS: Record<string, PBDParams> = {
   water: {
-    restDensity: 0.022,
-    pressureStiffness: 200000,
-    viscosity: 0.01,
-    restitution: 0.05,
+    restDensity: 0.040,
+    pressureStiffness: 900_000,
+    viscosity: 0.005,
+    restitution: 0.10,
     friction: 0.02,
     particleRadius: 3,
   },
   oil: {
-    restDensity: 0.022,
-    pressureStiffness: 150000,
-    viscosity: 0.12,
-    restitution: 0.03,
-    friction: 0.05,
+    restDensity: 0.040,
+    pressureStiffness: 800_000,
+    viscosity: 0.25,
+    restitution: 0.05,
+    friction: 0.04,
     particleRadius: 3,
   },
   'dry-powder': {

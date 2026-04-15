@@ -58,7 +58,7 @@ export function initParticles(
 
 // ─── Simulation step ──────────────────────────────────────────────────────────
 
-const GRAVITY_MM_S2 = 100   // mm/s² — reduced for stable SPH simulation
+const GRAVITY_MM_S2 = 4000  // mm/s² — elevated for visible slosh
 const PARTICLE_MASS = 1.0   // normalized
 
 export interface StepInput {
@@ -187,4 +187,18 @@ export function pbdStep(input: StepInput): Float32Array {
   }
 
   return out
+}
+
+// ─── Substep helper ───────────────────────────────────────────────────────────
+// Runs SUBSTEPS sub-steps at dt/SUBSTEPS for stability at higher gravity.
+
+export const SUBSTEPS = 3
+
+export function pbdStepMulti(input: StepInput): Float32Array {
+  const subDt = input.dt / SUBSTEPS
+  let particles = input.particles
+  for (let i = 0; i < SUBSTEPS; i++) {
+    particles = pbdStep({ ...input, particles, dt: subDt })
+  }
+  return particles
 }
