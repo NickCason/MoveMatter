@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   buildTrapezoidalProfile,
   buildConstantProfile,
+  buildSCurveProfile,
   type MoveProfile,
 } from '../sim/motionInterpolator'
 
@@ -68,5 +69,39 @@ describe('buildConstantProfile', () => {
     const p = buildConstantProfile(100, 500)
     const s = p.eval(p.durationS)
     approx(s.pos, 100, 0.1)
+  })
+})
+
+describe('buildSCurveProfile', () => {
+  it('returns positive duration', () => {
+    const p = buildSCurveProfile(100, 500, 1000, 1000, 5000, 5000)
+    expect(p.durationS).toBeGreaterThan(0)
+  })
+
+  it('starts at pos=0, vel=0, accel=0', () => {
+    const p = buildSCurveProfile(100, 500, 1000, 1000, 5000, 5000)
+    const s = p.eval(0)
+    approx(s.pos, 0)
+    approx(s.vel, 0)
+    approx(s.accel, 0)
+  })
+
+  it('ends at displacement, vel~0', () => {
+    const p = buildSCurveProfile(200, 500, 1000, 1000, 5000, 5000)
+    const s = p.eval(p.durationS)
+    approx(s.pos, 200, 0.5)
+    approx(s.vel, 0, 5)
+  })
+
+  it('has longer duration than trapezoidal for same move (jerk smoothing costs time)', () => {
+    const sc = buildSCurveProfile(200, 500, 1000, 1000, 2000, 2000)
+    const tr = buildTrapezoidalProfile(200, 500, 1000, 1000)
+    expect(sc.durationS).toBeGreaterThan(tr.durationS)
+  })
+
+  it('accel is near zero at t=0 and t=durationS', () => {
+    const p = buildSCurveProfile(200, 500, 1000, 1000, 5000, 5000)
+    approx(p.eval(0).accel, 0, 5)
+    approx(p.eval(p.durationS).accel, 0, 5)
   })
 })
