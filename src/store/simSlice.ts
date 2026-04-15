@@ -1,4 +1,5 @@
-import type { SimState, PlotBuffer } from '../types'
+import type { SimState, PlotBuffer, ContainerConfig, PBDParams } from '../types'
+import { initParticles } from '../sim/pbdSolver'
 
 const PLOT_WINDOW_MS = 30_000
 
@@ -8,6 +9,7 @@ export interface SimSlice {
   setSim: (sim: SimState) => void
   appendPlot: (timeMs: number, pos: number, vel: number, accel: number) => void
   resetSim: () => void
+  reinitParticles: (container: ContainerConfig, params: PBDParams) => void
 }
 
 const emptySimState = (): SimState => ({
@@ -44,4 +46,6 @@ export const createSimSlice = (set: any): SimSlice => ({
       }
     }),
   resetSim: () => set({ sim: emptySimState(), plotBuffer: emptyPlotBuffer() }),
+  reinitParticles: (container, params) =>
+    set({ sim: { ...emptySimState(), particles: initParticles(container, params) } }),
 })

@@ -3,13 +3,21 @@ import { useStore } from '../store'
 export function ContainerConfigPanel() {
   const container = useStore((s) => s.container)
   const setContainer = useStore((s) => s.setContainer)
+  const status = useStore((s) => s.playback.status)
+  const reinitParticles = useStore((s) => s.reinitParticles)
+  const material = useStore((s) => s.material)
 
-  function field(
-    label: string,
-    key: keyof typeof container,
-    unit: string,
-    min = 1,
-  ) {
+  function handleChange(key: keyof typeof container, raw: string) {
+    const value = parseFloat(raw)
+    if (isNaN(value)) return
+    const next = { ...container, [key]: value }
+    setContainer({ [key]: value })
+    if (status === 'idle') {
+      reinitParticles(next, material.params)
+    }
+  }
+
+  function field(label: string, key: keyof typeof container, unit: string, min = 1) {
     return (
       <label style={{ display: 'flex', flexDirection: 'column', gap: 1, fontSize: 11 }}>
         <span style={{ color: 'var(--color-text-muted)' }}>{label} ({unit})</span>
@@ -18,7 +26,7 @@ export function ContainerConfigPanel() {
           value={container[key]}
           min={min}
           max={key === 'fillPercent' ? 100 : undefined}
-          onChange={(e) => setContainer({ [key]: parseFloat(e.target.value) || 0 })}
+          onChange={(e) => handleChange(key, e.target.value)}
           style={{
             width: '100%', padding: '2px 4px', borderRadius: 3, fontSize: 12,
             border: '1px solid var(--color-border)', background: 'var(--color-bg)',
