@@ -83,6 +83,8 @@ export function startSimLoop(store: StoreApi<AppStore>): void {
           playback: { ...prev.playback, currentTimeMs: nextTimeMs },
           sim: { ...prev.sim, particles: freshParticles, containerPositionMm: 0, containerVelocityMms: 0, containerAccelMms2: 0 },
         }))
+        particleStateRef.particles = freshParticles
+        particleStateRef.containerPositionMm = 0
         rafId = requestAnimationFrame(tick)
         return
       } else {
@@ -195,6 +197,12 @@ export function resumeSimLoop(store: StoreApi<AppStore>): void {
       sim: { particles: newParticles, containerPositionMm: pos, containerVelocityMms: vel, containerAccelMms2: accel },
     }))
 
+    // Keep renderer ref in sync (avoids React re-renders)
+    particleStateRef.particles = newParticles
+    particleStateRef.containerPositionMm = pos
+    particleStateRef.material = s.material
+    particleStateRef.container = s.container
+
     // Plot buffer (sampled at ~10fps)
     plotFrameCounter++
     if (plotFrameCounter >= PLOT_SAMPLE_EVERY) {
@@ -214,7 +222,8 @@ function highlightActiveStep(store: StoreApi<AppStore>, currentTimeMs: number): 
   const { program } = store.getState()
   let elapsed = 0
   for (const step of program.steps) {
-    const dur = step.type === 'delay' ? step.duration : 0  // rough — Phase 2 refines with compiled segment times
+    const segment = compiledProgram?.segments.find((seg) => seg.stepId === step.id)
+    const dur = segment != null ? segment.durationS * 1000 : 0
     if (currentTimeMs <= elapsed + dur) {
       store.getState().setActiveStepId(step.id)
       return

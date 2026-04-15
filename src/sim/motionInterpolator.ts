@@ -215,16 +215,22 @@ export function buildSCurveProfile(
 
 // ─── Program evaluator ───────────────────────────────────────────────────────
 
+export interface CompiledSegment {
+  stepId: string
+  startT: number        // global start time (seconds)
+  startPos: number      // absolute container position at start of this step (mm)
+  durationS: number
+  profile: MoveProfile | null  // null = delay
+}
+
 export interface CompiledProgram {
   totalDurationS: number
+  segments: CompiledSegment[]
   eval: (t: number) => MotionSample
 }
 
-interface ProgramSegment {
-  startT: number        // global start time (seconds)
-  startPos: number      // absolute container position at start of this step (mm)
-  profile: MoveProfile | null  // null = delay
-}
+// Internal alias — same shape as CompiledSegment, kept for backward compat
+type ProgramSegment = CompiledSegment
 
 export function buildProgram(program: MotionProgram): CompiledProgram {
   const segments: ProgramSegment[] = []
@@ -234,9 +240,7 @@ export function buildProgram(program: MotionProgram): CompiledProgram {
   for (const step of program.steps) {
     if (step.type === 'delay') {
       const durationS = step.duration / 1000
-      segments.push({ startT: cursor, startPos: pos, profile: null })
-      // Attach duration so eval can determine segment end
-      ;(segments[segments.length - 1] as any).durationS = durationS
+      segments.push({ stepId: step.id, startT: cursor, startPos: pos, durationS, profile: null })
       cursor += durationS
     } else {
       let profile: MoveProfile
@@ -252,7 +256,7 @@ export function buildProgram(program: MotionProgram): CompiledProgram {
       } else {
         profile = buildConstantProfile(step.displacement, step.maxVelocity)
       }
-      segments.push({ startT: cursor, startPos: pos, profile })
+      segments.push({ stepId: step.id, startT: cursor, startPos: pos, durationS: profile.durationS, profile })
       pos += step.displacement
       cursor += profile.durationS
     }
@@ -286,5 +290,5 @@ export function buildProgram(program: MotionProgram): CompiledProgram {
     }
   }
 
-  return { totalDurationS, eval: eval_ }
+  return { totalDurationS, segments, eval: eval_ }
 }
