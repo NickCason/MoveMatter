@@ -203,11 +203,16 @@ export function startReplayLoop(store: StoreApi<AppStore>): void {
         nextTimeMs = buf.totalDurationMs
         const fi = buf.frameCount - 1
         _writeFrame(buf, fi, store)
+        // Update time but don't set status yet — settling loop sets 'idle' when done
         store.setState((p) => ({
-          playback: { ...p.playback, status: 'idle', currentTimeMs: nextTimeMs },
+          playback: { ...p.playback, currentTimeMs: nextTimeMs },
         }))
         rafId = null
         lastTimestamp = null
+        // Start settling animation from final particle state (slice to copy)
+        const offset = fi * buf.particleCount * STRIDE
+        const finalParticles = buf.packedParticles.slice(offset, offset + buf.particleCount * STRIDE)
+        startSettlingLoop(store, finalParticles)
         return
       }
     }
@@ -235,7 +240,68 @@ export function pauseReplayLoop(): void {
     cancelAnimationFrame(rafId)
     rafId = null
   }
+  stopSettlingLoop()
   lastTimestamp = null
+}
+
+// ─── Idle settling loop ───────────────────────────────────────────────────────
+// After a run ends, animates the fluid settling under gravity until near-rest,
+// then freezes and sets status='idle'.
+
+let settlingRafId: number | null = null
+const KE_THRESHOLD = 0.1  // mean per-particle KE (mm²/s²) to stop settling
+
+export function startSettlingLoop(
+  store: StoreApi<AppStore>,
+  initialParticles: Float32Array,
+): void {
+  if (settlingRafId !== null) {
+    cancelAnimationFrame(settlingRafId)
+    settlingRafId = null
+  }
+
+  const state = store.getState()
+  const { container, material } = state
+  let currentParticles = initialParticles
+
+  function tick() {
+    currentParticles = pbdStepMulti({
+      particles: currentParticles,
+      container,
+      params: material.params,
+      dt: 1 / 60,
+      containerAccelX: 0,
+    })
+
+    particleStateRef.particles = currentParticles
+
+    // Compute mean per-particle KE
+    const n = currentParticles.length / STRIDE
+    let ke = 0
+    for (let i = 0; i < n; i++) {
+      const vx = currentParticles[i * STRIDE + 2]
+      const vy = currentParticles[i * STRIDE + 3]
+      ke += vx * vx + vy * vy
+    }
+    const meanKE = n > 0 ? ke / n : 0
+
+    if (meanKE < KE_THRESHOLD) {
+      settlingRafId = null
+      store.setState((s) => ({ playback: { ...s.playback, status: 'idle' } }))
+      return
+    }
+
+    settlingRafId = requestAnimationFrame(tick)
+  }
+
+  settlingRafId = requestAnimationFrame(tick)
+}
+
+export function stopSettlingLoop(): void {
+  if (settlingRafId !== null) {
+    cancelAnimationFrame(settlingRafId)
+    settlingRafId = null
+  }
 }
 
 export function stopReplayLoop(store: StoreApi<AppStore>): void {
@@ -243,6 +309,7 @@ export function stopReplayLoop(store: StoreApi<AppStore>): void {
     cancelAnimationFrame(rafId)
     rafId = null
   }
+  stopSettlingLoop()
   lastTimestamp = null
   store.setState((s) => ({
     playback: { ...s.playback, status: 'idle', currentTimeMs: 0 },
