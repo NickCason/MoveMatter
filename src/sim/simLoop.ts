@@ -168,6 +168,17 @@ export function resumeSimLoop(store: StoreApi<AppStore>): void {
       playback: { ...p.playback, currentTimeMs: nextTimeMs },
       sim: { particles: newParticles, containerPositionMm: pos, containerVelocityMms: vel, containerAccelMms2: accel },
     }))
+
+    // Plot buffer (sampled at ~10fps)
+    plotFrameCounter++
+    if (plotFrameCounter >= PLOT_SAMPLE_EVERY) {
+      plotFrameCounter = 0
+      store.getState().appendPlot(nextTimeMs, pos, vel, accel)
+    }
+
+    // Track active step for editor highlight
+    highlightActiveStep(store, nextTimeMs)
+
     rafId = requestAnimationFrame(tick)
   }
   rafId = requestAnimationFrame(tick)
