@@ -1,4 +1,5 @@
 import { useStore } from '../store'
+import { FileMenu } from './FileMenu'
 
 export function Header() {
   const toggleTheme = useStore((s) => s.toggleTheme)
@@ -15,12 +16,7 @@ export function Header() {
         MoveMatter
       </span>
 
-      {/* File menu stub — replaced in Phase 2 */}
-      <nav className="flex gap-2 text-sm" style={{ color: 'var(--color-text-muted)' }}>
-        <button className="hover:opacity-80">New</button>
-        <button className="hover:opacity-80">Open</button>
-        <button className="hover:opacity-80">Save</button>
-      </nav>
+      <FileMenu />
 
       <div className="ml-auto flex items-center gap-3 text-sm">
         <button
