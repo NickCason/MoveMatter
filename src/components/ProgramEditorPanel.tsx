@@ -1,4 +1,3 @@
-import { useStoreApi } from 'zustand'
 import { useStore } from '../store'
 import { startSimLoop, stopSimLoop, resumeSimLoop } from '../sim/simLoop'
 import { validateProgram } from '../utils/validation'
@@ -7,7 +6,6 @@ import { ContainerConfigPanel } from './ContainerConfigPanel'
 import { MaterialSelector } from './MaterialSelector'
 
 export function ProgramEditorPanel() {
-  const store = useStoreApi()
   const program = useStore((s) => s.program)
   const status = useStore((s) => s.playback.status)
 
@@ -18,12 +16,12 @@ export function ProgramEditorPanel() {
 
   function handleRun() {
     if (isPlaying) {
-      stopSimLoop(store as any)
+      stopSimLoop(useStore as any)
     } else if (isPaused) {
-      resumeSimLoop(store as any)
+      resumeSimLoop(useStore as any)
     } else {
       if (validation.hasBlockingError) return
-      startSimLoop(store as any)
+      startSimLoop(useStore as any)
     }
   }
 
@@ -49,9 +47,10 @@ export function ProgramEditorPanel() {
           type="number"
           value={program.axisLength}
           min={1}
-          onChange={(e) =>
-            useStore.getState().setProgram({ ...program, axisLength: parseFloat(e.target.value) || 600 })
-          }
+          onChange={(e) => {
+            const current = useStore.getState().program
+            useStore.getState().setProgram({ ...current, axisLength: parseFloat(e.target.value) || 600 })
+          }}
           style={{
             width: 80, padding: '2px 4px', borderRadius: 3, fontSize: 12,
             border: '1px solid var(--color-border)', background: 'var(--color-bg)',
