@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { Application, Graphics, BlurFilter, ColorMatrixFilter } from 'pixi.js'
 import { useStore } from '../store'
-import { particleStateRef } from '../sim/simLoop'
+import { particleStateRef, runSettlingPass } from '../sim/simLoop'
 import { drawTrack, drawContainer, drawParticles, mmToPxScale } from '../sim/renderer'
 
 export function SimViewport() {
@@ -28,7 +28,6 @@ export function SimViewport() {
         autoDensity: true,
       })
       if (!mounted) {
-        // App fully initialized — safe to destroy
         try { app.destroy(true) } catch { /* ignore */ }
         return
       }
@@ -40,10 +39,8 @@ export function SimViewport() {
       const particleG = new Graphics()
       app.stage.addChild(trackG, containerG, particleG)
 
-      // Metaball filter for liquid modes (applied to particleG)
       blurFilter = new BlurFilter({ strength: 5, quality: 2 })
       thresholdFilter = new ColorMatrixFilter()
-      // Alpha: threshold at ~0.33 — new_a = 6*a - 2; transparent below, solid above
       thresholdFilter.matrix = [
         1, 0, 0, 0, 0,
         0, 1, 0, 0, 0,
@@ -70,7 +67,6 @@ export function SimViewport() {
         drawTrack(trackG, axisLength, scale, trackY, trackColor)
         drawContainer(containerG, containerPositionMm, container, scale, trackY, isDark)
 
-        // Toggle metaball filter based on material
         const isLiquid = material.preset === 'water' || material.preset === 'oil'
         if (material.preset !== prevMaterialPreset) {
           particleG.filters = isLiquid ? [blurFilter!, thresholdFilter!] : []
@@ -81,14 +77,15 @@ export function SimViewport() {
       })
 
       appRef.current = app
+
+      // Show settled rest state immediately on mount
+      runSettlingPass(useStore as any)
     }
 
     init()
 
     return () => {
       mounted = false
-      // Only destroy if app was fully initialized (appRef set); partial init
-      // (async init still in-flight) will be cleaned up inside init() itself
       if (appRef.current) {
         try { blurFilter?.destroy() } catch { /* ignore */ }
         try { thresholdFilter?.destroy() } catch { /* ignore */ }
