@@ -86,6 +86,9 @@ export async function computeFrameBuffer(store: StoreApi<AppStore>): Promise<voi
   // Let React paint the "Computing..." state before we block the thread
   await new Promise<void>((resolve) => setTimeout(resolve, 50))
 
+  // Honour a Stop that arrived during the defer window
+  if (store.getState().playback.status !== 'computing') return
+
   const compiled = buildProgram(state.program)
   cachedCompiledProgram = compiled
   const totalDurationMs = compiled.totalDurationS * 1000

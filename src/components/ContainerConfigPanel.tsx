@@ -1,4 +1,5 @@
 import { useStore } from '../store'
+import { runSettlingPass } from '../sim/simLoop'
 
 export function ContainerConfigPanel() {
   const container = useStore((s) => s.container)
@@ -14,6 +15,7 @@ export function ContainerConfigPanel() {
     setContainer({ [key]: value })
     if (status === 'idle') {
       reinitParticles(next, material.params)
+      runSettlingPass(useStore as any)
     }
   }
 
