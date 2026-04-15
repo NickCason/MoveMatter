@@ -105,6 +105,41 @@ describe('buildSCurveProfile', () => {
     approx(p.eval(0).accel, 0, 5)
     approx(p.eval(p.durationS).accel, 0, 5)
   })
+
+  it('does not overshoot displacement for a short move (triangle fallback)', () => {
+    // 200mm move, but accel+decel sides each need 175mm → total 350mm > 200mm
+    const p = buildSCurveProfile(200, 500, 1000, 1000, 5000, 5000)
+    // Sample 200 points — no intermediate position should exceed displacement
+    for (let i = 0; i <= 200; i++) {
+      const t = (i / 200) * p.durationS
+      const s = p.eval(t)
+      expect(s.pos).toBeLessThanOrEqual(200 + 0.5)
+      expect(s.pos).toBeGreaterThanOrEqual(-0.5)
+    }
+  })
+
+  it('ends at displacement for a short move (triangle fallback)', () => {
+    const p = buildSCurveProfile(50, 500, 1000, 1000, 5000, 5000)
+    approx(p.eval(p.durationS).pos, 50, 0.5)
+    approx(p.eval(p.durationS).vel, 0, 5)
+  })
+
+  it('ends at displacement for a long move (const-vel phase present)', () => {
+    // 1000mm — long enough for a const-vel plateau
+    const p = buildSCurveProfile(1000, 500, 1000, 1000, 5000, 5000)
+    approx(p.eval(p.durationS).pos, 1000, 0.5)
+  })
+
+  it('handles negative displacement without overshoot', () => {
+    const p = buildSCurveProfile(-200, 500, 1000, 1000, 5000, 5000)
+    for (let i = 0; i <= 200; i++) {
+      const t = (i / 200) * p.durationS
+      const s = p.eval(t)
+      expect(s.pos).toBeGreaterThanOrEqual(-200 - 0.5)
+      expect(s.pos).toBeLessThanOrEqual(0.5)
+    }
+    approx(p.eval(p.durationS).pos, -200, 0.5)
+  })
 })
 
 function makeProgram(steps: any[]): MotionProgram {
