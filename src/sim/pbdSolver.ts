@@ -5,24 +5,24 @@ export const STRIDE = 4  // [x, y, vx, vy] per particle
 // ─── SPH Kernel functions ─────────────────────────────────────────────────────
 // h = smoothing radius (mm)
 
-/** Poly6 kernel — used for density estimation */
+/** Poly6 kernel — 2D normalized. Used for density estimation */
 export function poly6(r2: number, h: number): number {
   if (r2 >= h * h) return 0
   const term = h * h - r2
-  return (315 / (64 * Math.PI * Math.pow(h, 9))) * term * term * term
+  return (4 / (Math.PI * Math.pow(h, 8))) * term * term * term
 }
 
-/** Spiky kernel gradient magnitude — used for pressure forces */
+/** Spiky kernel gradient magnitude — 2D normalized. Used for pressure forces */
 export function spikyGrad(r: number, h: number): number {
   if (r <= 0 || r >= h) return 0
   const term = h - r
-  return -(45 / (Math.PI * Math.pow(h, 6))) * term * term
+  return -(30 / (Math.PI * Math.pow(h, 5))) * term * term
 }
 
-/** Viscosity kernel laplacian — used for viscosity forces */
+/** Viscosity kernel laplacian — 2D normalized. Used for viscosity forces */
 export function viscLaplacian(r: number, h: number): number {
   if (r >= h) return 0
-  return (45 / (Math.PI * Math.pow(h, 6))) * (h - r)
+  return (40 / (Math.PI * Math.pow(h, 5))) * (h - r)
 }
 
 // ─── Particle initialization ──────────────────────────────────────────────────
@@ -58,7 +58,7 @@ export function initParticles(
 
 // ─── Simulation step ──────────────────────────────────────────────────────────
 
-const GRAVITY_MM_S2 = 9810  // mm/s²
+const GRAVITY_MM_S2 = 100   // mm/s² — reduced for stable SPH simulation
 const PARTICLE_MASS = 1.0   // normalized
 
 export interface StepInput {
@@ -155,6 +155,35 @@ export function pbdStep(input: StepInput): Float32Array {
     out[ix + 1] = ny
     out[ix + 2] = nvx
     out[ix + 3] = nvy
+  }
+
+  // Hard-sphere position correction — prevents particle overlap for all materials
+  const minDist = params.particleRadius * 2
+  const minDist2 = minDist * minDist
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 1; j < n; j++) {
+      const dx = out[i * STRIDE] - out[j * STRIDE]
+      const dy = out[i * STRIDE + 1] - out[j * STRIDE + 1]
+      const dist2 = dx * dx + dy * dy
+      if (dist2 < minDist2 && dist2 > 1e-10) {
+        const dist = Math.sqrt(dist2)
+        const push = (minDist - dist) * 0.5
+        const nx2 = (dx / dist) * push
+        const ny2 = (dy / dist) * push
+        out[i * STRIDE] += nx2
+        out[i * STRIDE + 1] += ny2
+        out[j * STRIDE] -= nx2
+        out[j * STRIDE + 1] -= ny2
+      }
+    }
+  }
+
+  // Re-clamp positions after hard-sphere push
+  for (let i = 0; i < n; i++) {
+    if (out[i * STRIDE] < xMin) out[i * STRIDE] = xMin
+    if (out[i * STRIDE] > xMax) out[i * STRIDE] = xMax
+    if (out[i * STRIDE + 1] < yMin) out[i * STRIDE + 1] = yMin
+    if (out[i * STRIDE + 1] > yMax) out[i * STRIDE + 1] = yMax
   }
 
   return out

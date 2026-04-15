@@ -96,7 +96,11 @@ export function drawParticles(
     ? (material.preset === 'water' ? 0x3b82f6 : 0xf59e0b)
     : (material.preset === 'dry-powder' ? 0xd97706 : 0x78716c)
 
-  const rPx = Math.max(1.5, material.params.particleRadius * scale)
+  // Liquid particles use 2× visual radius so the metaball blur/threshold has enough
+  // pixel coverage to pass the alpha threshold on small canvases.
+  const rPx = isLiquid
+    ? Math.max(3, material.params.particleRadius * scale * 2.0)
+    : Math.max(1.5, material.params.particleRadius * scale)
 
   for (let i = 0; i < n; i++) {
     const px = particles[i * STRIDE + 0]

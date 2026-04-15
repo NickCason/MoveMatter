@@ -41,14 +41,14 @@ export function SimViewport() {
       app.stage.addChild(trackG, containerG, particleG)
 
       // Metaball filter for liquid modes (applied to particleG)
-      blurFilter = new BlurFilter({ strength: 8, quality: 2 })
+      blurFilter = new BlurFilter({ strength: 5, quality: 2 })
       thresholdFilter = new ColorMatrixFilter()
-      // Alpha: threshold at ~0.45 — values below go transparent, above stay solid
+      // Alpha: threshold at ~0.33 — new_a = 6*a - 2; transparent below, solid above
       thresholdFilter.matrix = [
         1, 0, 0, 0, 0,
         0, 1, 0, 0, 0,
         0, 0, 1, 0, 0,
-        0, 0, 0, 18, -7,
+        0, 0, 0, 6, -2,
       ]
 
       let prevMaterialPreset: string | null = null

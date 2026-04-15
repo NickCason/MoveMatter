@@ -66,7 +66,7 @@ export function startSimLoop(store: StoreApi<AppStore>): void {
       return
     }
 
-    const wallDtS = Math.min((timestamp - lastTimestamp) / 1000, 0.05)  // cap at 50ms
+    const wallDtS = Math.min((timestamp - lastTimestamp) / 1000, 0.016)  // cap at 50ms
     lastTimestamp = timestamp
 
     const simDtS = wallDtS * s.playback.speedMultiplier
@@ -182,7 +182,7 @@ export function resumeSimLoop(store: StoreApi<AppStore>): void {
     const s = store.getState()
     if (s.playback.status !== 'playing') { rafId = null; lastTimestamp = null; return }
     if (lastTimestamp === null) { lastTimestamp = timestamp; rafId = requestAnimationFrame(tick); return }
-    const wallDtS = Math.min((timestamp - lastTimestamp) / 1000, 0.05)
+    const wallDtS = Math.min((timestamp - lastTimestamp) / 1000, 0.016)
     lastTimestamp = timestamp
     const simDtS = wallDtS * s.playback.speedMultiplier
     let nextTimeMs = s.playback.currentTimeMs + simDtS * 1000
