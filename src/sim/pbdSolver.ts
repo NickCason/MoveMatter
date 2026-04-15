@@ -55,3 +55,107 @@ export function initParticles(
   }
   return buf
 }
+
+// ─── Simulation step ──────────────────────────────────────────────────────────
+
+const GRAVITY_MM_S2 = 9810  // mm/s²
+const PARTICLE_MASS = 1.0   // normalized
+
+export interface StepInput {
+  particles: Float32Array
+  container: ContainerConfig
+  params: PBDParams
+  dt: number               // seconds
+  containerAccelX: number  // mm/s² (positive = container moving right)
+}
+
+export function pbdStep(input: StepInput): Float32Array {
+  const { particles, container, params, dt, containerAccelX } = input
+  const n = particles.length / STRIDE
+  const out = new Float32Array(particles.length)
+
+  const { widthMm, heightMm, wallThicknessMm } = container
+  const xMin = wallThicknessMm + params.particleRadius
+  const xMax = widthMm - wallThicknessMm - params.particleRadius
+  const yMin = wallThicknessMm + params.particleRadius
+  const yMax = heightMm - wallThicknessMm - params.particleRadius
+
+  const h = params.particleRadius * 4  // smoothing radius
+
+  // ── Density estimation ────────────────────────────────────────────────────
+  const density = new Float32Array(n)
+  for (let i = 0; i < n; i++) {
+    const xi = particles[i * STRIDE]
+    const yi = particles[i * STRIDE + 1]
+    let rho = 0
+    for (let j = 0; j < n; j++) {
+      const dx = xi - particles[j * STRIDE]
+      const dy = yi - particles[j * STRIDE + 1]
+      rho += PARTICLE_MASS * poly6(dx * dx + dy * dy, h)
+    }
+    density[i] = rho
+  }
+
+  // ── Force integration ─────────────────────────────────────────────────────
+  for (let i = 0; i < n; i++) {
+    const ix = i * STRIDE
+    const x = particles[ix]
+    const y = particles[ix + 1]
+    const vx = particles[ix + 2]
+    const vy = particles[ix + 3]
+
+    const rhoI = Math.max(density[i], 1e-6)
+    const pI = Math.max(0, params.pressureStiffness * (rhoI - params.restDensity))
+
+    // Body forces: gravity (down = +y) + inertial (opposite to container accel)
+    let fx = -containerAccelX * PARTICLE_MASS
+    let fy = GRAVITY_MM_S2 * PARTICLE_MASS
+
+    // Pair forces (SPH pressure + viscosity)
+    for (let j = 0; j < n; j++) {
+      if (i === j) continue
+      const jx = j * STRIDE
+      const dx = x - particles[jx]
+      const dy = y - particles[jx + 1]
+      const r2 = dx * dx + dy * dy
+      const r = Math.sqrt(r2)
+      if (r < 1e-6 || r >= h) continue
+
+      const rhoJ = Math.max(density[j], 1e-6)
+      const pJ = Math.max(0, params.pressureStiffness * (rhoJ - params.restDensity))
+
+      // Pressure force (spiky kernel gradient)
+      const sg = spikyGrad(r, h)
+      const pMag = -PARTICLE_MASS * (pI + pJ) / (2 * rhoJ) * sg
+      fx += pMag * (dx / r)
+      fy += pMag * (dy / r)
+
+      // Viscosity force (laplacian)
+      const dvx = particles[jx + 2] - vx
+      const dvy = particles[jx + 3] - vy
+      const vl = viscLaplacian(r, h)
+      const vCoeff = params.viscosity * PARTICLE_MASS / rhoJ * vl
+      fx += vCoeff * dvx
+      fy += vCoeff * dvy
+    }
+
+    // Semi-implicit Euler integration
+    let nvx = vx + (fx / PARTICLE_MASS) * dt
+    let nvy = vy + (fy / PARTICLE_MASS) * dt
+    let nx = x + nvx * dt
+    let ny = y + nvy * dt
+
+    // Boundary collision response
+    if (nx < xMin) { nx = xMin; nvx = Math.abs(nvx) * params.restitution; nvx -= Math.abs(nvy) * params.friction * 0.1 }
+    if (nx > xMax) { nx = xMax; nvx = -Math.abs(nvx) * params.restitution }
+    if (ny < yMin) { ny = yMin; nvy = Math.abs(nvy) * params.restitution; nvx *= (1 - params.friction) }
+    if (ny > yMax) { ny = yMax; nvy = -Math.abs(nvy) * params.restitution; nvx *= (1 - params.friction) }
+
+    out[ix] = nx
+    out[ix + 1] = ny
+    out[ix + 2] = nvx
+    out[ix + 3] = nvy
+  }
+
+  return out
+}
