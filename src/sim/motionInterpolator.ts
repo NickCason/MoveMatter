@@ -1,4 +1,4 @@
-import type { MotionSample } from '../types'
+import type { MotionSample, MotionProgram } from '../types'
 
 export interface MoveProfile {
   durationS: number
@@ -211,4 +211,80 @@ export function buildSCurveProfile(
   }
 
   return { durationS, eval: eval_ }
+}
+
+// ─── Program evaluator ───────────────────────────────────────────────────────
+
+export interface CompiledProgram {
+  totalDurationS: number
+  eval: (t: number) => MotionSample
+}
+
+interface ProgramSegment {
+  startT: number        // global start time (seconds)
+  startPos: number      // absolute container position at start of this step (mm)
+  profile: MoveProfile | null  // null = delay
+}
+
+export function buildProgram(program: MotionProgram): CompiledProgram {
+  const segments: ProgramSegment[] = []
+  let cursor = 0   // global time cursor (seconds)
+  let pos = 0      // running absolute position (mm)
+
+  for (const step of program.steps) {
+    if (step.type === 'delay') {
+      const durationS = step.duration / 1000
+      segments.push({ startT: cursor, startPos: pos, profile: null })
+      // Attach duration so eval can determine segment end
+      ;(segments[segments.length - 1] as any).durationS = durationS
+      cursor += durationS
+    } else {
+      let profile: MoveProfile
+      if (step.profileType === 'trapezoidal') {
+        profile = buildTrapezoidalProfile(
+          step.displacement, step.maxVelocity, step.acceleration, step.deceleration
+        )
+      } else if (step.profileType === 'scurve') {
+        profile = buildSCurveProfile(
+          step.displacement, step.maxVelocity, step.acceleration, step.deceleration,
+          step.accelJerk, step.decelJerk
+        )
+      } else {
+        profile = buildConstantProfile(step.displacement, step.maxVelocity)
+      }
+      segments.push({ startT: cursor, startPos: pos, profile })
+      pos += step.displacement
+      cursor += profile.durationS
+    }
+  }
+
+  const totalDurationS = cursor
+
+  function eval_(t: number): MotionSample {
+    if (segments.length === 0 || t <= 0) return { pos: 0, vel: 0, accel: 0 }
+    if (t >= totalDurationS) return { pos, vel: 0, accel: 0 }
+
+    // Find the active segment
+    let active = segments[0]
+    for (const seg of segments) {
+      if (t >= seg.startT) active = seg
+      else break
+    }
+
+    const localT = t - active.startT
+
+    if (active.profile === null) {
+      // Delay — position is held
+      return { pos: active.startPos, vel: 0, accel: 0 }
+    }
+
+    const sample = active.profile.eval(localT)
+    return {
+      pos: active.startPos + sample.pos,
+      vel: sample.vel,
+      accel: sample.accel,
+    }
+  }
+
+  return { totalDurationS, eval: eval_ }
 }

@@ -3,8 +3,11 @@ import {
   buildTrapezoidalProfile,
   buildConstantProfile,
   buildSCurveProfile,
+  buildProgram,
   type MoveProfile,
+  type CompiledProgram,
 } from '../sim/motionInterpolator'
+import type { MotionProgram } from '../types'
 
 function approx(a: number, b: number, tol = 0.01) {
   expect(Math.abs(a - b)).toBeLessThan(tol)
@@ -103,5 +106,57 @@ describe('buildSCurveProfile', () => {
     const p = buildSCurveProfile(200, 500, 1000, 1000, 5000, 5000)
     approx(p.eval(0).accel, 0, 5)
     approx(p.eval(p.durationS).accel, 0, 5)
+  })
+})
+
+function makeProgram(steps: any[]): MotionProgram {
+  return { id: 'test', name: 'Test', axisLength: 600, steps }
+}
+
+describe('buildProgram', () => {
+  it('computes totalDurationS for a single move', () => {
+    const prog = makeProgram([
+      { type: 'move', id: '1', displacement: 100, maxVelocity: 500,
+        acceleration: 1000, deceleration: 1000, accelJerk: 0, decelJerk: 0,
+        profileType: 'trapezoidal' },
+    ])
+    const cp = buildProgram(prog)
+    expect(cp.totalDurationS).toBeGreaterThan(0)
+  })
+
+  it('position at t=0 is 0', () => {
+    const prog = makeProgram([
+      { type: 'move', id: '1', displacement: 100, maxVelocity: 500,
+        acceleration: 1000, deceleration: 1000, accelJerk: 0, decelJerk: 0,
+        profileType: 'trapezoidal' },
+    ])
+    const cp = buildProgram(prog)
+    approx(cp.eval(0).pos, 0)
+  })
+
+  it('position after first move equals displacement', () => {
+    const prog = makeProgram([
+      { type: 'move', id: '1', displacement: 100, maxVelocity: 500,
+        acceleration: 1000, deceleration: 1000, accelJerk: 0, decelJerk: 0,
+        profileType: 'trapezoidal' },
+      { type: 'delay', id: '2', duration: 500 },
+    ])
+    const cp = buildProgram(prog)
+    // During delay, position stays at 100
+    const trapDuration = buildTrapezoidalProfile(100, 500, 1000, 1000).durationS
+    approx(cp.eval(trapDuration + 0.25).pos, 100, 1)  // mid-delay
+  })
+
+  it('two moves sum their displacements at end', () => {
+    const prog = makeProgram([
+      { type: 'move', id: '1', displacement: 100, maxVelocity: 500,
+        acceleration: 1000, deceleration: 1000, accelJerk: 0, decelJerk: 0,
+        profileType: 'trapezoidal' },
+      { type: 'move', id: '2', displacement: -50, maxVelocity: 300,
+        acceleration: 800, deceleration: 800, accelJerk: 0, decelJerk: 0,
+        profileType: 'trapezoidal' },
+    ])
+    const cp = buildProgram(prog)
+    approx(cp.eval(cp.totalDurationS).pos, 50, 1)
   })
 })
