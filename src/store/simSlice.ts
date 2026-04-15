@@ -1,13 +1,12 @@
-import type { SimState, PlotBuffer, ContainerConfig, PBDParams } from '../types'
+import type { SimState, StaticPlot, ContainerConfig, PBDParams } from '../types'
 import { initParticles } from '../sim/pbdSolver'
-
-const PLOT_WINDOW_MS = 30_000
 
 export interface SimSlice {
   sim: SimState
-  plotBuffer: PlotBuffer
+  staticPlot: StaticPlot | null
   setSim: (sim: SimState) => void
-  appendPlot: (timeMs: number, pos: number, vel: number, accel: number) => void
+  setStaticPlot: (plot: StaticPlot) => void
+  clearStaticPlot: () => void
   resetSim: () => void
   reinitParticles: (container: ContainerConfig, params: PBDParams) => void
 }
@@ -19,33 +18,13 @@ const emptySimState = (): SimState => ({
   containerAccelMms2: 0,
 })
 
-const emptyPlotBuffer = (): PlotBuffer => ({
-  times: [],
-  positions: [],
-  velocities: [],
-  accels: [],
-})
-
 export const createSimSlice = (set: any): SimSlice => ({
   sim: emptySimState(),
-  plotBuffer: emptyPlotBuffer(),
+  staticPlot: null,
   setSim: (sim) => set({ sim }),
-  appendPlot: (timeMs, pos, vel, accel) =>
-    set((s: any) => {
-      const cutoff = timeMs - PLOT_WINDOW_MS
-      const buf = s.plotBuffer
-      let start = 0
-      while (start < buf.times.length && buf.times[start] < cutoff) start++
-      return {
-        plotBuffer: {
-          times: [...buf.times.slice(start), timeMs],
-          positions: [...buf.positions.slice(start), pos],
-          velocities: [...buf.velocities.slice(start), vel],
-          accels: [...buf.accels.slice(start), accel],
-        },
-      }
-    }),
-  resetSim: () => set({ sim: emptySimState(), plotBuffer: emptyPlotBuffer() }),
+  setStaticPlot: (plot) => set({ staticPlot: plot }),
+  clearStaticPlot: () => set({ staticPlot: null }),
+  resetSim: () => set({ sim: emptySimState(), staticPlot: null }),
   reinitParticles: (container, params) =>
     set({ sim: { ...emptySimState(), particles: initParticles(container, params) } }),
 })

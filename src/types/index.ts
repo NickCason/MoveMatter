@@ -79,11 +79,11 @@ export interface SimState {
   containerAccelMms2: number
 }
 
-export interface PlotBuffer {
-  times: number[]           // ms from program start, rolling 30s window
-  positions: number[]       // mm
-  velocities: number[]      // mm/s
-  accels: number[]          // mm/s²
+export interface StaticPlot {
+  times: number[]       // ms, evenly sampled from 0 → totalDurationMs (~300 points)
+  positions: number[]   // mm
+  velocities: number[]  // mm/s
+  accels: number[]      // mm/s²
 }
 
 export type Theme = 'light' | 'dark'

@@ -37,8 +37,6 @@ export const frameBufferRef: { current: FrameBuffer | null } = { current: null }
 
 let rafId: number | null = null
 let lastTimestamp: number | null = null
-let plotFrameCounter = 0
-const PLOT_SAMPLE_EVERY = 6   // ~10fps plot updates at 60fps replay
 
 // Cached compiled program — set in computeFrameBuffer, used in highlightActiveStep
 let cachedCompiledProgram: ReturnType<typeof buildProgram> | null = null
@@ -122,6 +120,26 @@ export async function computeFrameBuffer(store: StoreApi<AppStore>): Promise<voi
     containerAccels[i] = accel
   }
 
+  // Derive static plot — downsample to at most 300 points
+  const PLOT_POINTS = Math.min(300, frameCount)
+  const plotStep = Math.max(1, Math.floor(frameCount / PLOT_POINTS))
+  const plotTimes: number[] = []
+  const plotPositions: number[] = []
+  const plotVelocities: number[] = []
+  const plotAccels: number[] = []
+  for (let i = 0; i < frameCount; i += plotStep) {
+    plotTimes.push(i * DT * 1000)
+    plotPositions.push(containerPositions[i])
+    plotVelocities.push(containerVelocities[i])
+    plotAccels.push(containerAccels[i])
+  }
+  store.getState().setStaticPlot({
+    times: plotTimes,
+    positions: plotPositions,
+    velocities: plotVelocities,
+    accels: plotAccels,
+  })
+
   frameBufferRef.current = {
     packedParticles,
     particleCount,
@@ -156,7 +174,6 @@ export async function computeFrameBuffer(store: StoreApi<AppStore>): Promise<voi
 export function startReplayLoop(store: StoreApi<AppStore>): void {
   if (rafId !== null) return
   lastTimestamp = null
-  plotFrameCounter = 0
 
   function tick(timestamp: number): void {
     const s = store.getState()
@@ -206,18 +223,6 @@ export function startReplayLoop(store: StoreApi<AppStore>): void {
       playback: { ...p.playback, currentTimeMs: nextTimeMs },
     }))
 
-    // Plot at ~10fps
-    plotFrameCounter++
-    if (plotFrameCounter >= PLOT_SAMPLE_EVERY) {
-      plotFrameCounter = 0
-      store.getState().appendPlot(
-        nextTimeMs,
-        buf.containerPositions[frameIdx],
-        buf.containerVelocities[frameIdx],
-        buf.containerAccels[frameIdx],
-      )
-    }
-
     highlightActiveStep(store, nextTimeMs)
     rafId = requestAnimationFrame(tick)
   }
@@ -239,7 +244,6 @@ export function stopReplayLoop(store: StoreApi<AppStore>): void {
     rafId = null
   }
   lastTimestamp = null
-  plotFrameCounter = 0
   store.setState((s) => ({
     playback: { ...s.playback, status: 'idle', currentTimeMs: 0 },
   }))
