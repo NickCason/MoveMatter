@@ -68,8 +68,12 @@ export function FileMenu() {
   function handleSaveAs() {
     const name = prompt('Save as:', program.name)
     if (!name) return
-    setProgram({ ...program, name })
-    downloadJson(buildFile(), `${name.replace(/[^a-z0-9_-]/gi, '_')}.movematter.json`)
+    const updated = { ...program, name }
+    setProgram(updated)
+    downloadJson(
+      { version: 1, program: updated, container, material },
+      `${name.replace(/[^a-z0-9_-]/gi, '_')}.movematter.json`
+    )
   }
 
   const btnStyle: React.CSSProperties = {
