@@ -11,7 +11,7 @@ export function ContainerConfigPanel() {
     min = 1,
   ) {
     return (
-      <label key={key} style={{ display: 'flex', flexDirection: 'column', gap: 1, fontSize: 11 }}>
+      <label style={{ display: 'flex', flexDirection: 'column', gap: 1, fontSize: 11 }}>
         <span style={{ color: 'var(--color-text-muted)' }}>{label} ({unit})</span>
         <input
           type="number"
