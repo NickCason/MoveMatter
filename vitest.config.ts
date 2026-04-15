@@ -8,5 +8,6 @@ export default defineConfig({
     globals: true,
     setupFiles: [],
     passWithNoTests: true,
+    exclude: ['**/node_modules/**', '**/dist/**', 'e2e/**'],
   },
 })

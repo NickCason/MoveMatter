@@ -87,7 +87,7 @@ test.describe('Validation', () => {
     await page.getByText('+ Add Move').click()
     // Max Velocity (mm/s) is the second NumInput label; its input is the second number input in the move row
     // We target by label text to be more robust
-    const velInput = page.locator('label').filter({ hasText: 'Max Velocity (mm/s)' }).locator('input[type="number"]')
+    const velInput = page.getByLabel('Max Velocity (mm/s)')
     await velInput.fill('0')
     await velInput.blur()
     const runBtn = page.getByRole('button', { name: 'Run' })
@@ -117,7 +117,7 @@ test.describe('Validation', () => {
     await expect(page.getByRole('button', { name: 'Toggle theme' })).toBeVisible()
     // The toggled text should still be visible after reload if theme is persisted
     const textAfterReload = await page.getByRole('button', { name: 'Toggle theme' }).textContent()
-    // Either persisted (same as toggled) or reset to initial — just verify it's one of the two valid labels
-    expect([initialText, textAfterToggle]).toContain(textAfterReload)
+    // Theme persists via localStorage (movematter-theme key), so reload should preserve the toggled state
+    expect(textAfterReload).toBe(textAfterToggle)
   })
 })
