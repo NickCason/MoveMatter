@@ -4,6 +4,7 @@ import {
   buildConstantProfile,
   buildSCurveProfile,
   buildProgram,
+  computeAchievable,
 } from '../sim/motionInterpolator'
 import type { MotionProgram } from '../types'
 
@@ -140,6 +141,26 @@ describe('buildSCurveProfile', () => {
     }
     approx(p.eval(p.durationS).pos, -200, 0.5)
   })
+
+  it('does not overshoot displacement when jerk is very low (was broken pre-fix)', () => {
+    // accelJerk=100 with accel=1000 and vMax=500 was the broken case
+    const p = buildSCurveProfile(100, 500, 1000, 1000, 100, 100)
+    const final = p.eval(p.durationS)
+    approx(final.pos, 100, 0.5)
+    approx(final.vel, 0, 5)
+    for (let i = 0; i <= 200; i++) {
+      const t = (i / 200) * p.durationS
+      const s = p.eval(t)
+      expect(s.pos).toBeLessThanOrEqual(100.5)
+      expect(s.pos).toBeGreaterThanOrEqual(-0.5)
+    }
+  })
+
+  it('ends at displacement with very low jerk and large displacement', () => {
+    const p = buildSCurveProfile(500, 300, 800, 800, 50, 50)
+    approx(p.eval(p.durationS).pos, 500, 1)
+    approx(p.eval(p.durationS).vel, 0, 5)
+  })
 })
 
 function makeProgram(steps: any[]): MotionProgram {
@@ -191,5 +212,68 @@ describe('buildProgram', () => {
     ])
     const cp = buildProgram(prog)
     approx(cp.eval(cp.totalDurationS).pos, 50, 1)
+  })
+})
+
+describe('computeAchievable', () => {
+  it('returns null for trapezoidal profile', () => {
+    const step = {
+      type: 'move' as const, id: '1', displacement: 100,
+      maxVelocity: 500, acceleration: 1000, deceleration: 1000,
+      accelJerk: 5000, decelJerk: 5000, profileType: 'trapezoidal' as const,
+    }
+    expect(computeAchievable(step)).toBeNull()
+  })
+
+  it('returns null for constant profile', () => {
+    const step = {
+      type: 'move' as const, id: '1', displacement: 100,
+      maxVelocity: 500, acceleration: 1000, deceleration: 1000,
+      accelJerk: 5000, decelJerk: 5000, profileType: 'constant' as const,
+    }
+    expect(computeAchievable(step)).toBeNull()
+  })
+
+  it('returns null for zero displacement', () => {
+    const step = {
+      type: 'move' as const, id: '1', displacement: 0,
+      maxVelocity: 500, acceleration: 1000, deceleration: 1000,
+      accelJerk: 5000, decelJerk: 5000, profileType: 'scurve' as const,
+    }
+    expect(computeAchievable(step)).toBeNull()
+  })
+
+  it('returns unreduced values when no constraint is active', () => {
+    const step = {
+      type: 'move' as const, id: '1', displacement: 1000,
+      maxVelocity: 300, acceleration: 800, deceleration: 800,
+      accelJerk: 10000, decelJerk: 10000, profileType: 'scurve' as const,
+    }
+    const r = computeAchievable(step)!
+    approx(r.velocity, 300, 1)
+    approx(r.accel, 800, 1)
+    approx(r.decel, 800, 1)
+  })
+
+  it('returns limited accel when jerk constrains the accel phase', () => {
+    // accelJerk=100, accel=1000 → aEffAccel = sqrt(achievedVelocity*100) < 1000
+    const step = {
+      type: 'move' as const, id: '1', displacement: 1000,
+      maxVelocity: 500, acceleration: 1000, deceleration: 1000,
+      accelJerk: 100, decelJerk: 100, profileType: 'scurve' as const,
+    }
+    const r = computeAchievable(step)!
+    expect(r.accel).toBeLessThan(1000)
+    approx(r.accel, Math.sqrt(r.velocity * 100), 5)
+  })
+
+  it('returns limited velocity when displacement too short for full profile', () => {
+    const step = {
+      type: 'move' as const, id: '1', displacement: 10,
+      maxVelocity: 500, acceleration: 1000, deceleration: 1000,
+      accelJerk: 5000, decelJerk: 5000, profileType: 'scurve' as const,
+    }
+    const r = computeAchievable(step)!
+    expect(r.velocity).toBeLessThan(500)
   })
 })

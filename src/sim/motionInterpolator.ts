@@ -1,4 +1,4 @@
-import type { MotionSample, MotionProgram } from '../types'
+import type { MotionSample, MotionProgram, MoveStep } from '../types'
 
 export interface MoveProfile {
   durationS: number
@@ -124,6 +124,7 @@ function evalSegment(seg: SCurveSegment, t: number): MotionSample {
 
 interface SCurvePhases {
   t_j1: number; t_ca: number; vAfterAccel: number
+  aEffAccel: number; aEffDecel: number
   t_j2: number; t_cd: number
   d_accel: number; d_decel: number
   // Intermediate values needed for segment construction
@@ -139,27 +140,33 @@ function computeScurvePhases(
   accelJerk: number,
   decelJerk: number,
 ): SCurvePhases {
-  // Accel side
-  const t_j1 = acceleration / accelJerk
-  const t_ca = Math.max(0, vPeak / acceleration - t_j1)
-  const vAfterAccel = acceleration * (t_j1 + t_ca)
+  // Cap effective peak acceleration so the jerk ramp never overshoots vPeak.
+  const aEffAccel = vPeak > 0 ? Math.min(acceleration, Math.sqrt(vPeak * accelJerk)) : 0
+  const t_j1 = aEffAccel > 0 ? aEffAccel / accelJerk : 0
+  const t_ca = Math.max(0, aEffAccel > 0 ? vPeak / aEffAccel - t_j1 : 0)
+  const vAfterAccel = aEffAccel * (t_j1 + t_ca)  // == vPeak by construction
 
   const vJ1 = 0.5 * accelJerk * t_j1 * t_j1
   const p1 = accelJerk * Math.pow(t_j1, 3) / 6
-  const v2 = vJ1 + acceleration * t_ca
-  const p2 = p1 + vJ1 * t_ca + 0.5 * acceleration * t_ca * t_ca
-  const d_accel = p2 + v2 * t_j1 + 0.5 * acceleration * t_j1 * t_j1 - accelJerk * Math.pow(t_j1, 3) / 6
+  const v2 = vJ1 + aEffAccel * t_ca
+  const p2 = p1 + vJ1 * t_ca + 0.5 * aEffAccel * t_ca * t_ca
+  const d_accel = p2 + v2 * t_j1 + 0.5 * aEffAccel * t_j1 * t_j1 - accelJerk * Math.pow(t_j1, 3) / 6
 
-  // Decel side (distance computed as mirror of accel — same math as existing code)
-  const t_j2 = deceleration / decelJerk
-  const t_cd = Math.max(0, vAfterAccel / deceleration - t_j2)
+  // Same cap on the decel side
+  const aEffDecel = vPeak > 0 ? Math.min(deceleration, Math.sqrt(vPeak * decelJerk)) : 0
+  const t_j2 = aEffDecel > 0 ? aEffDecel / decelJerk : 0
+  const t_cd = Math.max(0, aEffDecel > 0 ? vPeak / aEffDecel - t_j2 : 0)
   const vJ2 = 0.5 * decelJerk * t_j2 * t_j2
   const pD1 = decelJerk * Math.pow(t_j2, 3) / 6
-  const v_after_cd = vJ2 + deceleration * t_cd
-  const pD2 = pD1 + vJ2 * t_cd + 0.5 * deceleration * t_cd * t_cd
-  const d_decel = pD2 + v_after_cd * t_j2 + 0.5 * deceleration * t_j2 * t_j2 - decelJerk * Math.pow(t_j2, 3) / 6
+  const v_after_cd = vJ2 + aEffDecel * t_cd
+  const pD2 = pD1 + vJ2 * t_cd + 0.5 * aEffDecel * t_cd * t_cd
+  const d_decel = pD2 + v_after_cd * t_j2 + 0.5 * aEffDecel * t_j2 * t_j2 - decelJerk * Math.pow(t_j2, 3) / 6
 
-  return { t_j1, t_ca, vAfterAccel, t_j2, t_cd, d_accel, d_decel, p1, p2, v2, pD1, pD2, vJ2, v_after_cd }
+  return {
+    t_j1, t_ca, vAfterAccel, aEffAccel, aEffDecel,
+    t_j2, t_cd, d_accel, d_decel,
+    p1, p2, v2, pD1, pD2, vJ2, v_after_cd,
+  }
 }
 
 export function buildSCurveProfile(
@@ -233,6 +240,36 @@ export function buildSCurveProfile(
   }
 
   return { durationS, eval: eval_ }
+}
+
+// ─── Achievable value calculator ─────────────────────────────────────────────
+
+export function computeAchievable(
+  step: MoveStep,
+): { velocity: number; accel: number; decel: number } | null {
+  if (step.profileType !== 'scurve' || step.displacement === 0) return null
+
+  const dAbs = Math.abs(step.displacement)
+  let vPeak = step.maxVelocity
+  let phases = computeScurvePhases(vPeak, step.acceleration, step.deceleration, step.accelJerk, step.decelJerk)
+
+  if (phases.d_accel + phases.d_decel > dAbs) {
+    let lo = 0
+    let hi = step.maxVelocity
+    for (let i = 0; i < 64; i++) {
+      const mid = (lo + hi) / 2
+      const ph = computeScurvePhases(mid, step.acceleration, step.deceleration, step.accelJerk, step.decelJerk)
+      if (ph.d_accel + ph.d_decel <= dAbs) lo = mid; else hi = mid
+    }
+    vPeak = (lo + hi) / 2
+    phases = computeScurvePhases(vPeak, step.acceleration, step.deceleration, step.accelJerk, step.decelJerk)
+  }
+
+  return {
+    velocity: vPeak,
+    accel: phases.aEffAccel,
+    decel: phases.aEffDecel,
+  }
 }
 
 // ─── Program evaluator ───────────────────────────────────────────────────────

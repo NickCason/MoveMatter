@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useStore } from '../store'
 import type { MoveStep } from '../types'
+import { computeAchievable } from '../sim/motionInterpolator'
 
 interface Props {
   step: MoveStep
@@ -58,6 +59,7 @@ export function MoveRow({ step, error, dragHandleProps, rowDropProps }: Props) {
   const removeStep = useStore((s) => s.removeStep)
   const isScurve = step.profileType === 'scurve'
   const isConstant = step.profileType === 'constant'
+  const achieved = isScurve ? computeAchievable(step) : null
 
   return (
     <div
@@ -107,11 +109,32 @@ export function MoveRow({ step, error, dragHandleProps, rowDropProps }: Props) {
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
         {/* Displacement: no min — allows negative for reverse moves */}
         <NumInput label="Displacement (mm)" value={step.displacement} field="displacement" stepId={step.id} />
-        <NumInput label="Max Velocity (mm/s)" value={step.maxVelocity} field="maxVelocity" stepId={step.id} />
+        <div>
+          <NumInput label="Max Velocity (mm/s)" value={step.maxVelocity} field="maxVelocity" stepId={step.id} />
+          {achieved && achieved.velocity < step.maxVelocity - 0.5 && (
+            <p style={{ fontSize: 10, color: '#f97316', margin: '2px 0 0 0' }}>
+              Achievable: {achieved.velocity.toFixed(0)} mm/s
+            </p>
+          )}
+        </div>
         {!isConstant && (
           <>
-            <NumInput label="Acceleration (mm/s²)" value={step.acceleration} field="acceleration" stepId={step.id} />
-            <NumInput label="Deceleration (mm/s²)" value={step.deceleration} field="deceleration" stepId={step.id} />
+            <div>
+              <NumInput label="Acceleration (mm/s²)" value={step.acceleration} field="acceleration" stepId={step.id} />
+              {achieved && achieved.accel < step.acceleration - 0.5 && (
+                <p style={{ fontSize: 10, color: '#f97316', margin: '2px 0 0 0' }}>
+                  Achievable: {achieved.accel.toFixed(0)} mm/s²
+                </p>
+              )}
+            </div>
+            <div>
+              <NumInput label="Deceleration (mm/s²)" value={step.deceleration} field="deceleration" stepId={step.id} />
+              {achieved && achieved.decel < step.deceleration - 0.5 && (
+                <p style={{ fontSize: 10, color: '#f97316', margin: '2px 0 0 0' }}>
+                  Achievable: {achieved.decel.toFixed(0)} mm/s²
+                </p>
+              )}
+            </div>
           </>
         )}
         {isScurve && (
