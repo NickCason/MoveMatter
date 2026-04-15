@@ -28,7 +28,7 @@ function MiniPlot({ data, dataKey, color, unit, currentTimeMs }: PlotProps) {
             fontSize: 10, padding: '2px 6px',
             background: 'var(--color-surface)', border: '1px solid var(--color-border)',
           }}
-          formatter={(v: number) => [`${v.toFixed(1)} ${unit}`, dataKey]}
+          formatter={(v: unknown) => [`${(v as number).toFixed(1)} ${unit}`, dataKey] as [string, string]}
         />
         <ReferenceLine x={currentTimeMs} stroke="var(--color-accent)" strokeWidth={1.5} />
         <Line

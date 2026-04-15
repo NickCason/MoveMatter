@@ -73,7 +73,7 @@ export function SimViewport() {
         // Toggle metaball filter based on material
         const isLiquid = material.preset === 'water' || material.preset === 'oil'
         if (material.preset !== prevMaterialPreset) {
-          particleG.filters = isLiquid ? [blurFilter, thresholdFilter] : []
+          particleG.filters = isLiquid ? [blurFilter!, thresholdFilter!] : []
           prevMaterialPreset = material.preset
         }
 
