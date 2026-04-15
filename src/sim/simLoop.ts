@@ -2,6 +2,21 @@ import { buildProgram, type CompiledProgram } from './motionInterpolator'
 import { initParticles, pbdStep } from './pbdSolver'
 import type { AppStore } from '../store'
 import type { StoreApi } from 'zustand'
+import type { MaterialConfig, ContainerConfig } from '../types'
+
+/** Mutable ref written each frame by the sim loop; read by SimViewport's ticker.
+ *  Using a plain object avoids React re-renders at 60fps. */
+export const particleStateRef: {
+  particles: Float32Array
+  containerPositionMm: number
+  material: MaterialConfig | null
+  container: ContainerConfig | null
+} = {
+  particles: new Float32Array(0),
+  containerPositionMm: 0,
+  material: null,
+  container: null,
+}
 
 let rafId: number | null = null
 let lastTimestamp: number | null = null
@@ -30,6 +45,11 @@ export function startSimLoop(store: StoreApi<AppStore>): void {
     playback: { ...s.playback, totalDurationMs, status: 'playing' },
     sim: { ...s.sim, particles },
   }))
+
+  particleStateRef.particles = particles
+  particleStateRef.material = state.material
+  particleStateRef.container = state.container
+  particleStateRef.containerPositionMm = 0
 
   function tick(timestamp: number): void {
     const s = store.getState()
@@ -99,6 +119,12 @@ export function startSimLoop(store: StoreApi<AppStore>): void {
       playback: { ...prev.playback, currentTimeMs: nextTimeMs },
       sim: nextSim,
     }))
+
+    // Keep renderer ref in sync (avoids React re-renders)
+    particleStateRef.particles = newParticles
+    particleStateRef.containerPositionMm = pos
+    particleStateRef.material = s.material
+    particleStateRef.container = s.container
 
     // Plot buffer (sampled at ~10fps)
     plotFrameCounter++
