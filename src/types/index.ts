@@ -67,7 +67,7 @@ export interface PlaybackState {
   status: PlaybackStatus
   currentTimeMs: number
   totalDurationMs: number
-  speedMultiplier: number   // 0.25 | 0.5 | 1 | 2 | 4
+  speedMultiplier: 0.25 | 0.5 | 1 | 2 | 4
   loop: boolean
 }
 
