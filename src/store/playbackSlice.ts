@@ -23,10 +23,7 @@ export const createPlaybackSlice = (set: any): PlaybackSlice => ({
   playback: defaultPlayback(),
   play: () =>
     set((s: any) => ({
-      playback: {
-        ...s.playback,
-        status: s.playback.status === 'paused' ? 'playing' : 'playing',
-      },
+      playback: { ...s.playback, status: 'playing' },
     })),
   pause: () =>
     set((s: any) => ({ playback: { ...s.playback, status: 'paused' } })),
