@@ -186,9 +186,24 @@ export function resumeSimLoop(store: StoreApi<AppStore>): void {
     lastTimestamp = timestamp
     const simDtS = wallDtS * s.playback.speedMultiplier
     let nextTimeMs = s.playback.currentTimeMs + simDtS * 1000
-    if (nextTimeMs >= s.playback.totalDurationMs) {
-      store.setState((p) => ({ playback: { ...p.playback, status: 'idle', currentTimeMs: 0 } }))
-      rafId = null; return
+    const total = s.playback.totalDurationMs
+    if (nextTimeMs >= total) {
+      if (s.playback.loop) {
+        nextTimeMs = nextTimeMs % total
+        // Re-init particles on loop
+        const freshParticles = initParticles(s.container, s.material.params)
+        store.setState((p) => ({
+          playback: { ...p.playback, currentTimeMs: nextTimeMs },
+          sim: { ...p.sim, particles: freshParticles, containerPositionMm: 0, containerVelocityMms: 0, containerAccelMms2: 0 },
+        }))
+        particleStateRef.particles = freshParticles
+        particleStateRef.containerPositionMm = 0
+        rafId = requestAnimationFrame(tick)
+        return
+      } else {
+        store.setState((p) => ({ playback: { ...p.playback, status: 'idle', currentTimeMs: 0 } }))
+        rafId = null; lastTimestamp = null; return
+      }
     }
     const { pos, vel, accel } = compiledProgram!.eval(nextTimeMs / 1000)
     const newParticles = pbdStep({ particles: s.sim.particles, container: s.container, params: s.material.params, dt: simDtS, containerAccelX: accel })

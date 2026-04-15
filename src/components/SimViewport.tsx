@@ -98,6 +98,12 @@ export function SimViewport() {
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps — intentional: init once
 
+  useEffect(() => {
+    const app = appRef.current
+    if (!app) return
+    app.renderer.background.color = theme === 'dark' ? 0x0f172a : 0xf8fafc
+  }, [theme])
+
   return (
     <div
       ref={mountRef}
