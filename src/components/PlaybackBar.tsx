@@ -1,10 +1,10 @@
 import { useStore } from '../store'
-import { stopSimLoop, pauseSimLoop, resumeSimLoop } from '../sim/simLoop'
+import { stopReplayLoop, pauseReplayLoop, startReplayLoop } from '../sim/simLoop'
 
 const SPEED_OPTIONS = [0.25, 0.5, 1, 2, 4]
 
 export function PlaybackBar() {
-  const { status, currentTimeMs, totalDurationMs, speedMultiplier, loop } = useStore(
+  const { status, currentTimeMs, totalDurationMs, speedMultiplier, loop, hasBuffer } = useStore(
     (s) => s.playback
   )
   const pause = useStore((s) => s.pause)
@@ -15,19 +15,35 @@ export function PlaybackBar() {
   const isPlaying = status === 'playing'
   const isPaused = status === 'paused'
   const isIdle = status === 'idle'
+  const isComputing = status === 'computing'
+
+  // Controls disabled during computing
+  const disabled = isComputing
 
   function handlePlayPause() {
+    if (disabled) return
     if (isPlaying) {
-      pauseSimLoop()
+      pauseReplayLoop()
       pause()
     } else if (isPaused) {
-      resumeSimLoop(useStore as any)
+      // Resume from current position
+      useStore.setState((s) => ({ playback: { ...s.playback, status: 'playing' } }))
+      startReplayLoop(useStore as any)
+    } else if (isIdle && hasBuffer) {
+      // Replay from current scrub position (defaults to 0 after stop)
+      useStore.setState((s) => ({ playback: { ...s.playback, status: 'playing' } }))
+      startReplayLoop(useStore as any)
     }
-    // Idle: start is triggered by RunButton in ProgramEditorPanel
   }
 
   function handleStop() {
-    stopSimLoop(useStore as any)
+    if (disabled) return
+    stopReplayLoop(useStore as any)
+  }
+
+  function handleSeek(ms: number) {
+    if (disabled) return
+    seek(ms)
   }
 
   function formatTime(ms: number): string {
@@ -36,6 +52,8 @@ export function PlaybackBar() {
     return `${s}.${frac.toString().padStart(2, '0')}s`
   }
 
+  const playEnabled = !disabled && (isPlaying || isPaused || (isIdle && hasBuffer))
+
   return (
     <div
       style={{
@@ -43,13 +61,22 @@ export function PlaybackBar() {
         height: '100%', borderTop: '1px solid var(--color-border)',
       }}
     >
+      {/* Computing indicator */}
+      {isComputing && (
+        <span style={{ fontSize: 11, color: 'var(--color-accent)', fontStyle: 'italic' }}>
+          Computing…
+        </span>
+      )}
+
       {/* Transport buttons */}
       <button
         onClick={handlePlayPause}
-        disabled={isIdle}
+        disabled={!playEnabled}
         style={{
-          background: 'none', border: 'none', cursor: isIdle ? 'default' : 'pointer',
-          fontSize: 18, color: isIdle ? 'var(--color-border)' : 'var(--color-accent)',
+          background: 'none', border: 'none',
+          cursor: playEnabled ? 'pointer' : 'default',
+          fontSize: 18,
+          color: playEnabled ? 'var(--color-accent)' : 'var(--color-border)',
           padding: '0 4px',
         }}
         aria-label={isPlaying ? 'Pause' : 'Play'}
@@ -59,10 +86,12 @@ export function PlaybackBar() {
 
       <button
         onClick={handleStop}
-        disabled={isIdle}
+        disabled={disabled || isIdle}
         style={{
-          background: 'none', border: 'none', cursor: isIdle ? 'default' : 'pointer',
-          fontSize: 16, color: isIdle ? 'var(--color-border)' : 'var(--color-text-muted)',
+          background: 'none', border: 'none',
+          cursor: (!disabled && !isIdle) ? 'pointer' : 'default',
+          fontSize: 16,
+          color: (!disabled && !isIdle) ? 'var(--color-text-muted)' : 'var(--color-border)',
           padding: '0 4px',
         }}
         aria-label="Stop"
@@ -76,7 +105,8 @@ export function PlaybackBar() {
         min={0}
         max={Math.max(totalDurationMs, 1)}
         value={currentTimeMs}
-        onChange={(e) => seek(parseFloat(e.target.value))}
+        disabled={disabled}
+        onChange={(e) => handleSeek(parseFloat(e.target.value))}
         style={{ flex: 1, accentColor: 'var(--color-accent)' }}
         aria-label="Timeline scrubber"
       />
@@ -89,6 +119,7 @@ export function PlaybackBar() {
       {/* Speed selector */}
       <select
         value={speedMultiplier}
+        disabled={disabled}
         onChange={(e) => setSpeed(parseFloat(e.target.value) as 0.25 | 0.5 | 1 | 2 | 4)}
         style={{
           fontSize: 11, padding: '2px 4px', borderRadius: 4,
@@ -105,11 +136,13 @@ export function PlaybackBar() {
       {/* Loop toggle */}
       <button
         onClick={toggleLoop}
+        disabled={disabled}
         style={{
           background: loop ? 'var(--color-accent)' : 'var(--color-surface)',
           color: loop ? '#fff' : 'var(--color-text-muted)',
           border: '1px solid var(--color-border)',
-          borderRadius: 4, padding: '2px 8px', fontSize: 11, cursor: 'pointer',
+          borderRadius: 4, padding: '2px 8px', fontSize: 11,
+          cursor: disabled ? 'not-allowed' : 'pointer',
         }}
         aria-label="Toggle loop"
       >

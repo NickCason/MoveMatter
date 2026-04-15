@@ -1,5 +1,5 @@
 import { useStore } from '../store'
-import { startSimLoop, stopSimLoop, resumeSimLoop } from '../sim/simLoop'
+import { computeFrameBuffer, stopReplayLoop, runSettlingPass } from '../sim/simLoop'
 import { validateProgram } from '../utils/validation'
 import { MoveList } from './MoveList'
 import { ContainerConfigPanel } from './ContainerConfigPanel'
@@ -13,20 +13,22 @@ export function ProgramEditorPanel() {
   const isPlaying = status === 'playing'
   const isPaused = status === 'paused'
   const isIdle = status === 'idle'
+  const isComputing = status === 'computing'
 
-  function handleRun() {
-    if (isPlaying) {
-      stopSimLoop(useStore as any)
-    } else if (isPaused) {
-      resumeSimLoop(useStore as any)
+  async function handleRun() {
+    if (isComputing) return
+    if (isPlaying || isPaused) {
+      stopReplayLoop(useStore as any)
+      // Re-run settling pass to show rest state after stop
+      runSettlingPass(useStore as any)
     } else {
       if (validation.hasBlockingError) return
-      startSimLoop(useStore as any)
+      await computeFrameBuffer(useStore as any)
     }
   }
 
-  const runLabel = isPlaying ? 'Stop' : isPaused ? 'Resume' : 'Run'
-  const runDisabled = isIdle && validation.hasBlockingError
+  const runLabel = (isPlaying || isPaused) ? 'Stop' : isComputing ? 'Computing…' : 'Run'
+  const runDisabled = isComputing || (isIdle && validation.hasBlockingError)
 
   return (
     <div className="flex flex-col h-full overflow-y-auto gap-3">
@@ -64,7 +66,7 @@ export function ProgramEditorPanel() {
         onClick={handleRun}
         disabled={runDisabled}
         style={{
-          background: isPlaying ? '#ef4444' : runDisabled ? 'var(--color-border)' : 'var(--color-accent)',
+          background: (isPlaying || isPaused) ? '#ef4444' : runDisabled ? 'var(--color-border)' : 'var(--color-accent)',
           color: runDisabled ? 'var(--color-text-muted)' : '#fff',
           borderRadius: 6,
           padding: '6px 16px',
