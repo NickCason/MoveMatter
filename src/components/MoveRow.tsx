@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useStore } from '../store'
 import type { MoveStep } from '../types'
 
@@ -14,14 +15,28 @@ function NumInput({
   label: string; value: number; field: keyof MoveStep; stepId: string; disabled?: boolean
 }) {
   const updateStep = useStore((s) => s.updateStep)
+  const [localVal, setLocalVal] = useState<string>(String(value))
+
+  // Sync local display when store value changes externally (e.g. file load)
+  const displayVal = document.activeElement?.id === `${stepId}-${field}` ? localVal : String(value)
+
+  function handleBlur() {
+    const parsed = parseFloat(localVal)
+    const committed = isNaN(parsed) ? 0 : parsed
+    setLocalVal(String(committed))
+    updateStep(stepId, { [field]: committed } as any)
+  }
+
   return (
     <label style={{ display: 'flex', flexDirection: 'column', gap: 1, fontSize: 11 }}>
       <span style={{ color: 'var(--color-text-muted)' }}>{label}</span>
       <input
+        id={`${stepId}-${field}`}
         type="number"
-        value={value}
+        value={displayVal}
         disabled={disabled}
-        onChange={(e) => updateStep(stepId, { [field]: parseFloat(e.target.value) || 0 } as any)}
+        onChange={(e) => setLocalVal(e.target.value)}
+        onBlur={handleBlur}
         style={{
           width: '100%', padding: '2px 4px', borderRadius: 3, fontSize: 12,
           border: '1px solid var(--color-border)', background: 'var(--color-bg)',
@@ -84,6 +99,7 @@ export function MoveRow({ step, error, dragHandleProps, rowDropProps }: Props) {
 
       {/* Field grid */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+        {/* Displacement: no min — allows negative for reverse moves */}
         <NumInput label="Displacement (mm)" value={step.displacement} field="displacement" stepId={step.id} />
         <NumInput label="Max Velocity (mm/s)" value={step.maxVelocity} field="maxVelocity" stepId={step.id} />
         {!isConstant && (
