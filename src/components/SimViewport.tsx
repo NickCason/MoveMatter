@@ -27,7 +27,11 @@ export function SimViewport() {
         resolution: window.devicePixelRatio,
         autoDensity: true,
       })
-      if (!mounted) { app.destroy(true); return }
+      if (!mounted) {
+        // App fully initialized — safe to destroy
+        try { app.destroy(true) } catch { /* ignore */ }
+        return
+      }
 
       mountRef.current!.appendChild(app.canvas)
 
@@ -83,10 +87,14 @@ export function SimViewport() {
 
     return () => {
       mounted = false
-      blurFilter?.destroy()
-      thresholdFilter?.destroy()
-      app?.destroy(true)
-      appRef.current = null
+      // Only destroy if app was fully initialized (appRef set); partial init
+      // (async init still in-flight) will be cleaned up inside init() itself
+      if (appRef.current) {
+        try { blurFilter?.destroy() } catch { /* ignore */ }
+        try { thresholdFilter?.destroy() } catch { /* ignore */ }
+        try { appRef.current.destroy(true) } catch { /* ignore */ }
+        appRef.current = null
+      }
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps — intentional: init once
 
