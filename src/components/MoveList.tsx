@@ -12,6 +12,8 @@ interface Props {
 export function MoveList({ stepErrors }: Props) {
   const steps = useStore((s) => s.program.steps)
   const reorderSteps = useStore((s) => s.reorderSteps)
+  const axisLength = useStore((s) => s.program.axisLength)
+  const containerWidthMm = useStore((s) => s.container.widthMm)
   const dragIndexRef = useRef<number | null>(null)
 
   function errorFor(id: string): string | undefined {
@@ -31,6 +33,14 @@ export function MoveList({ stepErrors }: Props) {
     if (from === null || from === targetIndex) return
     reorderSteps(from, targetIndex)
     dragIndexRef.current = null
+  }
+
+  // Compute cumulative start position for each step
+  const startPositions: number[] = []
+  let cumPos = 0
+  for (const step of steps) {
+    startPositions.push(cumPos)
+    if (step.type === 'move') cumPos += step.displacement
   }
 
   if (steps.length === 0) {
@@ -62,6 +72,9 @@ export function MoveList({ stepErrors }: Props) {
             error={errorFor(step.id)}
             dragHandleProps={dragHandleProps}
             rowDropProps={rowDropProps}
+            startPositionMm={startPositions[index]}
+            axisLength={axisLength}
+            containerWidthMm={containerWidthMm}
           />
         ) : (
           <DelayRow

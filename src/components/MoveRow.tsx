@@ -8,6 +8,9 @@ interface Props {
   error?: string
   dragHandleProps?: React.HTMLAttributes<HTMLDivElement>
   rowDropProps?: React.HTMLAttributes<HTMLDivElement>
+  startPositionMm: number
+  axisLength: number
+  containerWidthMm: number
 }
 
 function NumInput({
@@ -54,12 +57,17 @@ function NumInput({
   )
 }
 
-export function MoveRow({ step, error, dragHandleProps, rowDropProps }: Props) {
+export function MoveRow({ step, error, dragHandleProps, rowDropProps, startPositionMm, axisLength, containerWidthMm }: Props) {
   const updateStep = useStore((s) => s.updateStep)
   const removeStep = useStore((s) => s.removeStep)
   const isScurve = step.profileType === 'scurve'
   const isConstant = step.profileType === 'constant'
   const achieved = isScurve ? computeAchievable(step) : null
+
+  const maxPos = axisLength - containerWidthMm
+  const endPositionMm = startPositionMm + step.displacement
+  const inBounds = endPositionMm >= 0 && endPositionMm <= maxPos
+  const remainingMm = maxPos - startPositionMm
 
   return (
     <div
@@ -107,8 +115,14 @@ export function MoveRow({ step, error, dragHandleProps, rowDropProps }: Props) {
 
       {/* Field grid */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
-        {/* Displacement: no min — allows negative for reverse moves */}
-        <NumInput label="Displacement (mm)" value={step.displacement} field="displacement" stepId={step.id} />
+        {/* Displacement with bounds info */}
+        <div style={!inBounds ? { outline: '1px solid #ef4444', borderRadius: 3 } : undefined}>
+          <NumInput label="Displacement (mm)" value={step.displacement} field="displacement" stepId={step.id} />
+          <p style={{ fontSize: 10, color: inBounds ? 'var(--color-text-muted)' : '#f97316', margin: '2px 0 0 0' }}>
+            at {startPositionMm.toFixed(0)}mm → {remainingMm.toFixed(0)}mm remaining
+            {!inBounds && ' ⚠ overflow'}
+          </p>
+        </div>
         <div>
           <NumInput label="Max Velocity (mm/s)" value={step.maxVelocity} field="maxVelocity" stepId={step.id} />
           {achieved && achieved.velocity < step.maxVelocity - 0.5 && (
