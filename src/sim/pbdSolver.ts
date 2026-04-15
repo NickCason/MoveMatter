@@ -146,7 +146,7 @@ export function pbdStep(input: StepInput): Float32Array {
     let ny = y + nvy * dt
 
     // Boundary collision response
-    if (nx < xMin) { nx = xMin; nvx = Math.abs(nvx) * params.restitution; nvx -= Math.abs(nvy) * params.friction * 0.1 }
+    if (nx < xMin) { nx = xMin; nvx = Math.abs(nvx) * params.restitution; nvx *= (1 - params.friction) }
     if (nx > xMax) { nx = xMax; nvx = -Math.abs(nvx) * params.restitution }
     if (ny < yMin) { ny = yMin; nvy = Math.abs(nvy) * params.restitution; nvx *= (1 - params.friction) }
     if (ny > yMax) { ny = yMax; nvy = -Math.abs(nvy) * params.restitution; nvx *= (1 - params.friction) }
