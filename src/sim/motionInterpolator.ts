@@ -162,7 +162,7 @@ export function buildSCurveProfile(
   const v_j2 = 0.5 * decelJerk * t_j2 * t_j2
   const pD1 = decelJerk * Math.pow(t_j2, 3) / 6  // decel phase 1 (jerk up to D_max)
   const pD2 = pD1 + v_j2 * t_cd + 0.5 * deceleration * t_cd * t_cd
-  const v_after_cd = v_j2 + deceleration * t_cd   // should equal vAfterAccel
+  const v_after_cd = v_j2 + deceleration * t_cd   // velocity at end of const-decel phase (used for pD3 geometry)
   const pD3 = pD2 + v_after_cd * t_j2 + 0.5 * deceleration * t_j2 * t_j2 - decelJerk * Math.pow(t_j2, 3) / 6
   const d_decel_side = pD3
 
