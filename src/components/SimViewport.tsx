@@ -8,19 +8,21 @@ export function SimViewport() {
   const mountRef = useRef<HTMLDivElement>(null)
   const appRef = useRef<Application | null>(null)
 
-  const program = useStore((s) => s.program)
-  const ui = useStore((s) => s.ui)
+  const theme = useStore((s) => s.ui.theme)
 
   useEffect(() => {
     if (!mountRef.current) return
     let mounted = true
     let app: Application | null = null
+    let blurFilter: BlurFilter | null = null
+    let thresholdFilter: ColorMatrixFilter | null = null
 
     async function init() {
+      const state = useStore.getState()
       app = new Application()
       await app.init({
         resizeTo: mountRef.current!,
-        background: ui.theme === 'dark' ? 0x0f172a : 0xf8fafc,
+        background: state.ui.theme === 'dark' ? 0x0f172a : 0xf8fafc,
         antialias: true,
         resolution: window.devicePixelRatio,
         autoDensity: true,
@@ -35,10 +37,10 @@ export function SimViewport() {
       app.stage.addChild(trackG, containerG, particleG)
 
       // Metaball filter for liquid modes (applied to particleG)
-      const blur = new BlurFilter({ strength: 8, quality: 2 })
-      const threshold = new ColorMatrixFilter()
+      blurFilter = new BlurFilter({ strength: 8, quality: 2 })
+      thresholdFilter = new ColorMatrixFilter()
       // Alpha: threshold at ~0.45 — values below go transparent, above stay solid
-      threshold.matrix = [
+      thresholdFilter.matrix = [
         1, 0, 0, 0, 0,
         0, 1, 0, 0, 0,
         0, 0, 1, 0, 0,
@@ -54,10 +56,11 @@ export function SimViewport() {
 
         if (!container || !material) return
 
-        const axisLength = program.axisLength
+        const state = useStore.getState()
+        const axisLength = state.program.axisLength
         const scale = mmToPxScale(width, axisLength)
         const trackY = height * 0.45
-        const isDark = ui.theme === 'dark'
+        const isDark = state.ui.theme === 'dark'
         const trackColor = isDark ? 0x475569 : 0xcbd5e1
 
         drawTrack(trackG, axisLength, scale, trackY, trackColor)
@@ -66,7 +69,7 @@ export function SimViewport() {
         // Toggle metaball filter based on material
         const isLiquid = material.preset === 'water' || material.preset === 'oil'
         if (material.preset !== prevMaterialPreset) {
-          particleG.filters = isLiquid ? [blur, threshold] : []
+          particleG.filters = isLiquid ? [blurFilter, thresholdFilter] : []
           prevMaterialPreset = material.preset
         }
 
@@ -80,6 +83,8 @@ export function SimViewport() {
 
     return () => {
       mounted = false
+      blurFilter?.destroy()
+      thresholdFilter?.destroy()
       app?.destroy(true)
       appRef.current = null
     }
@@ -89,7 +94,7 @@ export function SimViewport() {
     <div
       ref={mountRef}
       className="w-full h-full"
-      style={{ background: ui.theme === 'dark' ? '#0f172a' : '#f8fafc' }}
+      style={{ background: theme === 'dark' ? '#0f172a' : '#f8fafc' }}
     />
   )
 }
