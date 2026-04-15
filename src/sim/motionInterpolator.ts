@@ -102,14 +102,15 @@ export function buildConstantProfile(
 // ─── S-curve profile ──────────────────────────────────────────────────────────
 // 7-phase jerk-limited profile.
 // Phases: [jerk-up | const-accel | jerk-down] [const-vel] [jerk-up | const-decel | jerk-down]
-// The "decel jerk-up" means accel goes from 0 → -D_max (increasing decel magnitude).
+// Falls back to a reduced peak velocity (triangle fallback) when the full accel+decel
+// sides would overshoot the target displacement — analogous to trapezoidal's triangle fallback.
 
 interface SCurveSegment {
   startT: number
   startPos: number
   startVel: number
   startAccel: number
-  jerk: number           // constant jerk during this phase
+  jerk: number
   duration: number
 }
 
@@ -121,56 +122,77 @@ function evalSegment(seg: SCurveSegment, t: number): MotionSample {
   return { pos, vel, accel }
 }
 
+interface SCurvePhases {
+  t_j1: number; t_ca: number; vAfterAccel: number
+  t_j2: number; t_cd: number
+  d_accel: number; d_decel: number
+  // Intermediate values needed for segment construction
+  p1: number; p2: number; v2: number
+  pD1: number; pD2: number; vJ2: number; v_after_cd: number
+}
+
+/** Compute S-curve phase variables for a given peak velocity target. */
+function computeScurvePhases(
+  vPeak: number,
+  acceleration: number,
+  deceleration: number,
+  accelJerk: number,
+  decelJerk: number,
+): SCurvePhases {
+  // Accel side
+  const t_j1 = acceleration / accelJerk
+  const t_ca = Math.max(0, vPeak / acceleration - t_j1)
+  const vAfterAccel = acceleration * (t_j1 + t_ca)
+
+  const vJ1 = 0.5 * accelJerk * t_j1 * t_j1
+  const p1 = accelJerk * Math.pow(t_j1, 3) / 6
+  const v2 = vJ1 + acceleration * t_ca
+  const p2 = p1 + vJ1 * t_ca + 0.5 * acceleration * t_ca * t_ca
+  const d_accel = p2 + v2 * t_j1 + 0.5 * acceleration * t_j1 * t_j1 - accelJerk * Math.pow(t_j1, 3) / 6
+
+  // Decel side (distance computed as mirror of accel — same math as existing code)
+  const t_j2 = deceleration / decelJerk
+  const t_cd = Math.max(0, vAfterAccel / deceleration - t_j2)
+  const vJ2 = 0.5 * decelJerk * t_j2 * t_j2
+  const pD1 = decelJerk * Math.pow(t_j2, 3) / 6
+  const v_after_cd = vJ2 + deceleration * t_cd
+  const pD2 = pD1 + vJ2 * t_cd + 0.5 * deceleration * t_cd * t_cd
+  const d_decel = pD2 + v_after_cd * t_j2 + 0.5 * deceleration * t_j2 * t_j2 - decelJerk * Math.pow(t_j2, 3) / 6
+
+  return { t_j1, t_ca, vAfterAccel, t_j2, t_cd, d_accel, d_decel, p1, p2, v2, pD1, pD2, vJ2, v_after_cd }
+}
+
 export function buildSCurveProfile(
   displacement: number,
   maxVelocity: number,
-  acceleration: number,  // max accel magnitude mm/s²
-  deceleration: number,  // max decel magnitude mm/s²
-  accelJerk: number,     // mm/s³
-  decelJerk: number,     // mm/s³
+  acceleration: number,
+  deceleration: number,
+  accelJerk: number,
+  decelJerk: number,
 ): MoveProfile {
   const sign = displacement >= 0 ? 1 : -1
   const dAbs = Math.abs(displacement)
 
-  // ── Accel side (phases 1–3) ──────────────────────────────────────────────
-  // Phase 1: jerk up to A over t_j1 = A/j1
-  // Phase 3: jerk down from A to 0 over t_j1 (symmetric)
-  // Phase 2: constant accel A for t_ca
-  const t_j1 = acceleration / accelJerk           // duration of jerk phases on accel side
-  const v_j1 = 0.5 * accelJerk * t_j1 * t_j1     // vel gained in phase 1
-  // Velocity achieved by phases 1+2+3 = A*(t_ca + t_j1)
-  // We want this to equal vPeak (≤ maxVelocity)
-  // If maxVelocity > vPeakAccel, we use a const-accel phase
-  const t_ca = Math.max(0, maxVelocity / acceleration - t_j1)
-  const vAfterAccel = acceleration * (t_j1 + t_ca) // actual velocity after accel side
+  let phases = computeScurvePhases(maxVelocity, acceleration, deceleration, accelJerk, decelJerk)
 
-  // ── Decel side (phases 5–7) ──────────────────────────────────────────────
-  const t_j2 = deceleration / decelJerk
-  const t_cd = Math.max(0, vAfterAccel / deceleration - t_j2)
+  // Triangle fallback: if accel+decel sides exceed displacement, binary-search for vPeak
+  if (phases.d_accel + phases.d_decel > dAbs) {
+    let lo = 0
+    let hi = maxVelocity
+    for (let i = 0; i < 64; i++) {
+      const mid = (lo + hi) / 2
+      const ph = computeScurvePhases(mid, acceleration, deceleration, accelJerk, decelJerk)
+      if (ph.d_accel + ph.d_decel <= dAbs) lo = mid; else hi = mid
+    }
+    phases = computeScurvePhases((lo + hi) / 2, acceleration, deceleration, accelJerk, decelJerk)
+  }
 
-  // ── Position consumed by accel side ──────────────────────────────────────
-  // Phase 1: pos = j1*t_j1³/6
-  const p1 = accelJerk * Math.pow(t_j1, 3) / 6
-  // Phase 2: starts at (p1, v_j1, A), const accel A for t_ca
-  const p2 = p1 + v_j1 * t_ca + 0.5 * acceleration * t_ca * t_ca
-  const v2 = v_j1 + acceleration * t_ca
-  // Phase 3: starts at (p2, v2, A), jerk -j1 for t_j1
-  const p3 = p2 + v2 * t_j1 + 0.5 * acceleration * t_j1 * t_j1 - accelJerk * Math.pow(t_j1, 3) / 6
-  const d_accel_side = p3
+  const { t_j1, t_ca, vAfterAccel, t_j2, t_cd, d_accel, d_decel, p1, p2, v2, pD1, pD2, vJ2, v_after_cd } = phases
 
-  // ── Position consumed by decel side (symmetric logic with decel params) ──
-  const v_j2 = 0.5 * decelJerk * t_j2 * t_j2
-  const pD1 = decelJerk * Math.pow(t_j2, 3) / 6  // decel phase 1 (jerk up to D_max)
-  const pD2 = pD1 + v_j2 * t_cd + 0.5 * deceleration * t_cd * t_cd
-  const v_after_cd = v_j2 + deceleration * t_cd   // velocity at end of const-decel phase (used for pD3 geometry)
-  const pD3 = pD2 + v_after_cd * t_j2 + 0.5 * deceleration * t_j2 * t_j2 - decelJerk * Math.pow(t_j2, 3) / 6
-  const d_decel_side = pD3
+  const d_const = Math.max(0, dAbs - d_accel - d_decel)
+  const t_cv = d_const > 0 ? d_const / vAfterAccel : 0
 
-  // ── Constant velocity phase ───────────────────────────────────────────────
-  const d_const = Math.max(0, dAbs - d_accel_side - d_decel_side)
-  const t_cv = d_const / vAfterAccel
-
-  // ── Build segment list (all in unsigned coordinates) ──────────────────────
+  // Build segment list (all in unsigned coordinates)
   const segs: SCurveSegment[] = []
   let tCursor = 0
   let pCursor = 0
@@ -187,13 +209,13 @@ export function buildSCurveProfile(
     aCursor = end.accel
   }
 
-  addSeg(+accelJerk, t_j1)  // Ph1: jerk up
-  addSeg(0, t_ca)            // Ph2: const accel
-  addSeg(-accelJerk, t_j1)  // Ph3: jerk down
-  addSeg(0, t_cv)            // Ph4: const vel
-  addSeg(-decelJerk, t_j2)  // Ph5: jerk up (decel starts)
-  addSeg(0, t_cd)            // Ph6: const decel
-  addSeg(+decelJerk, t_j2)  // Ph7: jerk down (back to 0 accel)
+  addSeg(+accelJerk, t_j1)   // Ph1: jerk up
+  addSeg(0, t_ca)             // Ph2: const accel
+  addSeg(-accelJerk, t_j1)   // Ph3: jerk down
+  addSeg(0, t_cv)             // Ph4: const vel
+  addSeg(-decelJerk, t_j2)   // Ph5: jerk up (decel starts)
+  addSeg(0, t_cd)             // Ph6: const decel
+  addSeg(+decelJerk, t_j2)   // Ph7: jerk down (back to 0 accel)
 
   const durationS = tCursor
 
