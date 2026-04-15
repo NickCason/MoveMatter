@@ -1,11 +1,11 @@
-import { buildProgram, type CompiledProgram } from './motionInterpolator'
-import { initParticles, pbdStep } from './pbdSolver'
+import { buildProgram } from './motionInterpolator'
+import { initParticles, pbdStep, STRIDE } from './pbdSolver'
 import type { AppStore } from '../store'
 import type { StoreApi } from 'zustand'
 import type { MaterialConfig, ContainerConfig } from '../types'
 
-/** Mutable ref written each frame by the sim loop; read by SimViewport's ticker.
- *  Using a plain object avoids React re-renders at 60fps. */
+// ─── Renderer interface (read by SimViewport ticker every frame) ──────────────
+
 export const particleStateRef: {
   particles: Float32Array
   containerPositionMm: number
@@ -18,78 +18,173 @@ export const particleStateRef: {
   container: null,
 }
 
+// ─── Frame buffer (written by computeFrameBuffer, read by startReplayLoop) ───
+
+export interface FrameBuffer {
+  /** All frames packed: frame i starts at offset i * particleCount * STRIDE */
+  packedParticles: Float32Array
+  particleCount: number
+  containerPositions: Float32Array   // mm per frame
+  containerVelocities: Float32Array  // mm/s per frame
+  containerAccels: Float32Array      // mm/s² per frame
+  frameCount: number
+  totalDurationMs: number
+}
+
+export const frameBufferRef: { current: FrameBuffer | null } = { current: null }
+
+// ─── Module state ─────────────────────────────────────────────────────────────
+
 let rafId: number | null = null
 let lastTimestamp: number | null = null
-let compiledProgram: CompiledProgram | null = null
 let plotFrameCounter = 0
+const PLOT_SAMPLE_EVERY = 6   // ~10fps plot updates at 60fps replay
 
-const PLOT_SAMPLE_EVERY = 6  // ~10fps plot updates at 60fps sim
+// Cached compiled program — set in computeFrameBuffer, used in highlightActiveStep
+let cachedCompiledProgram: ReturnType<typeof buildProgram> | null = null
 
-export function startSimLoop(store: StoreApi<AppStore>): void {
-  if (rafId !== null) return  // already running
+// ─── Settling pass (idle render) ─────────────────────────────────────────────
 
+const SETTLING_TICKS = 120
+const SETTLE_DT = 1 / 60
+
+/**
+ * Runs 120 PBD ticks (gravity only, no container motion) on freshly-initialized
+ * particles. Updates particleStateRef so SimViewport shows a settled rest state.
+ * Called on mount and whenever container config changes at idle.
+ */
+export function runSettlingPass(store: StoreApi<AppStore>): void {
+  const { container, material } = store.getState()
+  let particles = initParticles(container, material.params)
+  for (let i = 0; i < SETTLING_TICKS; i++) {
+    particles = pbdStep({ particles, container, params: material.params, dt: SETTLE_DT, containerAccelX: 0 })
+  }
+  particleStateRef.particles = particles
+  particleStateRef.containerPositionMm = 0
+  particleStateRef.material = material
+  particleStateRef.container = container
+}
+
+// ─── Compute phase ────────────────────────────────────────────────────────────
+
+/**
+ * Compiles the motion program, runs the full sim synchronously, and stores
+ * every frame in frameBufferRef. Sets status='computing' before the run (with
+ * a 50ms defer so React can paint the indicator), then status='playing' after.
+ * Automatically starts the replay loop when done.
+ */
+export async function computeFrameBuffer(store: StoreApi<AppStore>): Promise<void> {
   const state = store.getState()
 
-  // Compile the program once
-  compiledProgram = buildProgram(state.program)
-  const totalDurationMs = compiledProgram.totalDurationS * 1000
-
-  // Initialize particles if not already done
-  const particles =
-    state.sim.particles.length > 0
-      ? state.sim.particles
-      : initParticles(state.container, state.material.params)
-
-  // Update total duration in store
+  // Clear any previous buffer and reset plot
+  frameBufferRef.current = null
   store.setState((s) => ({
-    playback: { ...s.playback, totalDurationMs, status: 'playing' },
-    sim: { ...s.sim, particles },
+    playback: { ...s.playback, status: 'computing', hasBuffer: false, currentTimeMs: 0 },
+  }))
+  store.getState().resetSim()
+
+  // Let React paint the "Computing..." state before we block the thread
+  await new Promise<void>((resolve) => setTimeout(resolve, 50))
+
+  const compiled = buildProgram(state.program)
+  cachedCompiledProgram = compiled
+  const totalDurationMs = compiled.totalDurationS * 1000
+  const DT = 1 / 60
+  const frameCount = Math.max(1, Math.ceil(totalDurationMs / (DT * 1000)))
+
+  let particles = initParticles(state.container, state.material.params)
+  const particleCount = particles.length / STRIDE
+
+  // Allocate packed buffer: all frames × all particle components
+  const packedParticles = new Float32Array(frameCount * particleCount * STRIDE)
+  const containerPositions = new Float32Array(frameCount)
+  const containerVelocities = new Float32Array(frameCount)
+  const containerAccels = new Float32Array(frameCount)
+
+  for (let i = 0; i < frameCount; i++) {
+    const timeS = i * DT
+    const { pos, vel, accel } = compiled.eval(timeS)
+
+    particles = pbdStep({
+      particles,
+      container: state.container,
+      params: state.material.params,
+      dt: DT,
+      containerAccelX: accel,
+    })
+
+    packedParticles.set(particles, i * particleCount * STRIDE)
+    containerPositions[i] = pos
+    containerVelocities[i] = vel
+    containerAccels[i] = accel
+  }
+
+  frameBufferRef.current = {
+    packedParticles,
+    particleCount,
+    containerPositions,
+    containerVelocities,
+    containerAccels,
+    frameCount,
+    totalDurationMs,
+  }
+
+  store.setState((s) => ({
+    playback: {
+      ...s.playback,
+      status: 'playing',
+      hasBuffer: true,
+      totalDurationMs,
+      currentTimeMs: 0,
+    },
   }))
 
-  particleStateRef.particles = particles
+  // Update particleStateRef to frame 0
+  particleStateRef.particles = packedParticles.subarray(0, particleCount * STRIDE)
+  particleStateRef.containerPositionMm = 0
   particleStateRef.material = state.material
   particleStateRef.container = state.container
-  particleStateRef.containerPositionMm = 0
+
+  startReplayLoop(store)
+}
+
+// ─── Replay loop ──────────────────────────────────────────────────────────────
+
+export function startReplayLoop(store: StoreApi<AppStore>): void {
+  if (rafId !== null) return
+  lastTimestamp = null
+  plotFrameCounter = 0
 
   function tick(timestamp: number): void {
     const s = store.getState()
-
     if (s.playback.status !== 'playing') {
       rafId = null
       lastTimestamp = null
       return
     }
-
     if (lastTimestamp === null) {
       lastTimestamp = timestamp
       rafId = requestAnimationFrame(tick)
       return
     }
 
-    const wallDtS = Math.min((timestamp - lastTimestamp) / 1000, 0.016)  // cap at 50ms
+    const buf = frameBufferRef.current
+    if (!buf) { rafId = null; return }
+
+    const wallDtMs = Math.min(timestamp - lastTimestamp, 50)
     lastTimestamp = timestamp
 
-    const simDtS = wallDtS * s.playback.speedMultiplier
-    let nextTimeMs = s.playback.currentTimeMs + simDtS * 1000
+    let nextTimeMs = s.playback.currentTimeMs + wallDtMs * s.playback.speedMultiplier
 
-    const total = s.playback.totalDurationMs
-
-    if (nextTimeMs >= total) {
+    if (nextTimeMs >= buf.totalDurationMs) {
       if (s.playback.loop) {
-        nextTimeMs = nextTimeMs % total
-        // Re-init particles on loop
-        const freshParticles = initParticles(s.container, s.material.params)
-        store.setState((prev) => ({
-          playback: { ...prev.playback, currentTimeMs: nextTimeMs },
-          sim: { ...prev.sim, particles: freshParticles, containerPositionMm: 0, containerVelocityMms: 0, containerAccelMms2: 0 },
-        }))
-        particleStateRef.particles = freshParticles
-        particleStateRef.containerPositionMm = 0
-        rafId = requestAnimationFrame(tick)
-        return
+        nextTimeMs = 0
       } else {
-        store.setState((prev) => ({
-          playback: { ...prev.playback, status: 'idle', currentTimeMs: 0 },
+        nextTimeMs = buf.totalDurationMs
+        const fi = buf.frameCount - 1
+        _writeFrame(buf, fi, store)
+        store.setState((p) => ({
+          playback: { ...p.playback, status: 'idle', currentTimeMs: nextTimeMs },
         }))
         rafId = null
         lastTimestamp = null
@@ -97,147 +192,74 @@ export function startSimLoop(store: StoreApi<AppStore>): void {
       }
     }
 
-    // Evaluate motion program
-    const { pos, vel, accel } = compiledProgram!.eval(nextTimeMs / 1000)
+    const frameIdx = Math.min(
+      Math.floor(nextTimeMs / (buf.totalDurationMs / buf.frameCount)),
+      buf.frameCount - 1,
+    )
 
-    // Advance physics
-    const newParticles = pbdStep({
-      particles: s.sim.particles,
-      container: s.container,
-      params: s.material.params,
-      dt: simDtS,
-      containerAccelX: accel,
-    })
+    _writeFrame(buf, frameIdx, store)
 
-    // Write sim state
-    const nextSim = {
-      particles: newParticles,
-      containerPositionMm: pos,
-      containerVelocityMms: vel,
-      containerAccelMms2: accel,
-    }
-
-    store.setState((prev) => ({
-      playback: { ...prev.playback, currentTimeMs: nextTimeMs },
-      sim: nextSim,
+    store.setState((p) => ({
+      playback: { ...p.playback, currentTimeMs: nextTimeMs },
     }))
 
-    // Keep renderer ref in sync (avoids React re-renders)
-    particleStateRef.particles = newParticles
-    particleStateRef.containerPositionMm = pos
-    particleStateRef.material = s.material
-    particleStateRef.container = s.container
-
-    // Plot buffer (sampled at ~10fps)
+    // Plot at ~10fps
     plotFrameCounter++
     if (plotFrameCounter >= PLOT_SAMPLE_EVERY) {
       plotFrameCounter = 0
-      store.getState().appendPlot(nextTimeMs, pos, vel, accel)
+      store.getState().appendPlot(
+        nextTimeMs,
+        buf.containerPositions[frameIdx],
+        buf.containerVelocities[frameIdx],
+        buf.containerAccels[frameIdx],
+      )
     }
 
-    // Track active step for editor highlight
     highlightActiveStep(store, nextTimeMs)
-
     rafId = requestAnimationFrame(tick)
   }
 
   rafId = requestAnimationFrame(tick)
 }
 
-export function stopSimLoop(store: StoreApi<AppStore>): void {
+export function pauseReplayLoop(): void {
   if (rafId !== null) {
     cancelAnimationFrame(rafId)
     rafId = null
   }
   lastTimestamp = null
-  compiledProgram = null
+}
+
+export function stopReplayLoop(store: StoreApi<AppStore>): void {
+  if (rafId !== null) {
+    cancelAnimationFrame(rafId)
+    rafId = null
+  }
+  lastTimestamp = null
   plotFrameCounter = 0
   store.setState((s) => ({
     playback: { ...s.playback, status: 'idle', currentTimeMs: 0 },
   }))
-  store.getState().resetSim()
   store.getState().setActiveStepId(null)
 }
 
-export function pauseSimLoop(): void {
-  if (rafId !== null) {
-    cancelAnimationFrame(rafId)
-    rafId = null
-  }
-  lastTimestamp = null
-}
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
-/** Resume after pause — does NOT re-compile program */
-export function resumeSimLoop(store: StoreApi<AppStore>): void {
-  if (rafId !== null) return
-  if (compiledProgram === null) {
-    // Fallback: full restart
-    startSimLoop(store)
-    return
-  }
-  store.setState((s) => ({
-    playback: { ...s.playback, status: 'playing' },
-  }))
-  function tick(timestamp: number): void {
-    const s = store.getState()
-    if (s.playback.status !== 'playing') { rafId = null; lastTimestamp = null; return }
-    if (lastTimestamp === null) { lastTimestamp = timestamp; rafId = requestAnimationFrame(tick); return }
-    const wallDtS = Math.min((timestamp - lastTimestamp) / 1000, 0.016)
-    lastTimestamp = timestamp
-    const simDtS = wallDtS * s.playback.speedMultiplier
-    let nextTimeMs = s.playback.currentTimeMs + simDtS * 1000
-    const total = s.playback.totalDurationMs
-    if (nextTimeMs >= total) {
-      if (s.playback.loop) {
-        nextTimeMs = nextTimeMs % total
-        // Re-init particles on loop
-        const freshParticles = initParticles(s.container, s.material.params)
-        store.setState((p) => ({
-          playback: { ...p.playback, currentTimeMs: nextTimeMs },
-          sim: { ...p.sim, particles: freshParticles, containerPositionMm: 0, containerVelocityMms: 0, containerAccelMms2: 0 },
-        }))
-        particleStateRef.particles = freshParticles
-        particleStateRef.containerPositionMm = 0
-        rafId = requestAnimationFrame(tick)
-        return
-      } else {
-        store.setState((p) => ({ playback: { ...p.playback, status: 'idle', currentTimeMs: 0 } }))
-        rafId = null; lastTimestamp = null; return
-      }
-    }
-    const { pos, vel, accel } = compiledProgram!.eval(nextTimeMs / 1000)
-    const newParticles = pbdStep({ particles: s.sim.particles, container: s.container, params: s.material.params, dt: simDtS, containerAccelX: accel })
-    store.setState((p) => ({
-      playback: { ...p.playback, currentTimeMs: nextTimeMs },
-      sim: { particles: newParticles, containerPositionMm: pos, containerVelocityMms: vel, containerAccelMms2: accel },
-    }))
-
-    // Keep renderer ref in sync (avoids React re-renders)
-    particleStateRef.particles = newParticles
-    particleStateRef.containerPositionMm = pos
-    particleStateRef.material = s.material
-    particleStateRef.container = s.container
-
-    // Plot buffer (sampled at ~10fps)
-    plotFrameCounter++
-    if (plotFrameCounter >= PLOT_SAMPLE_EVERY) {
-      plotFrameCounter = 0
-      store.getState().appendPlot(nextTimeMs, pos, vel, accel)
-    }
-
-    // Track active step for editor highlight
-    highlightActiveStep(store, nextTimeMs)
-
-    rafId = requestAnimationFrame(tick)
-  }
-  rafId = requestAnimationFrame(tick)
+function _writeFrame(buf: FrameBuffer, frameIdx: number, store: StoreApi<AppStore>): void {
+  const offset = frameIdx * buf.particleCount * STRIDE
+  particleStateRef.particles = buf.packedParticles.subarray(offset, offset + buf.particleCount * STRIDE)
+  particleStateRef.containerPositionMm = buf.containerPositions[frameIdx]
+  const s = store.getState()
+  particleStateRef.material = s.material
+  particleStateRef.container = s.container
 }
 
 function highlightActiveStep(store: StoreApi<AppStore>, currentTimeMs: number): void {
+  if (!cachedCompiledProgram) return
   const { program } = store.getState()
   let elapsed = 0
   for (const step of program.steps) {
-    const segment = compiledProgram?.segments.find((seg) => seg.stepId === step.id)
+    const segment = cachedCompiledProgram.segments.find((seg) => seg.stepId === step.id)
     const dur = segment != null ? segment.durationS * 1000 : 0
     if (currentTimeMs <= elapsed + dur) {
       store.getState().setActiveStepId(step.id)
