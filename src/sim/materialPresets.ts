@@ -1,8 +1,5 @@
 import type { PBDParams } from '../types'
 
-// restDensity values are calibrated to equilibrium packing density under the
-// 2D-normalized poly6 kernel (h = particleRadius * 4, spacing = particleRadius * 2.2).
-// pressureStiffness is scaled to balance gravity (100 mm/s²) at ~5% compression.
 export const MATERIAL_PRESETS: Record<string, PBDParams> = {
   water: {
     restDensity: 0.022,
@@ -21,19 +18,19 @@ export const MATERIAL_PRESETS: Record<string, PBDParams> = {
     particleRadius: 3,
   },
   'dry-powder': {
-    restDensity: 0.016,
-    pressureStiffness: 80000,
-    viscosity: 0.3,
-    restitution: 0.15,
-    friction: 0.45,
-    particleRadius: 3.5,
+    restDensity: 0.028,
+    pressureStiffness: 60000,
+    viscosity: 0.35,
+    restitution: 0.04,
+    friction: 0.55,
+    particleRadius: 2,
   },
   'coarse-granular': {
-    restDensity: 0.008,
-    pressureStiffness: 40000,
-    viscosity: 0.5,
-    restitution: 0.3,
-    friction: 0.65,
-    particleRadius: 5,
+    restDensity: 0.014,
+    pressureStiffness: 30000,
+    viscosity: 0.45,
+    restitution: 0.08,
+    friction: 0.70,
+    particleRadius: 3.5,
   },
 }
