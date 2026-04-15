@@ -187,7 +187,7 @@ export function buildSCurveProfile(
     phases = computeScurvePhases((lo + hi) / 2, acceleration, deceleration, accelJerk, decelJerk)
   }
 
-  const { t_j1, t_ca, vAfterAccel, t_j2, t_cd, d_accel, d_decel, p1, p2, v2, pD1, pD2, vJ2, v_after_cd } = phases
+  const { t_j1, t_ca, vAfterAccel, t_j2, t_cd, d_accel, d_decel } = phases
 
   const d_const = Math.max(0, dAbs - d_accel - d_decel)
   const t_cv = d_const > 0 ? d_const / vAfterAccel : 0
