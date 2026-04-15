@@ -4,8 +4,6 @@ import {
   buildConstantProfile,
   buildSCurveProfile,
   buildProgram,
-  type MoveProfile,
-  type CompiledProgram,
 } from '../sim/motionInterpolator'
 import type { MotionProgram } from '../types'
 
