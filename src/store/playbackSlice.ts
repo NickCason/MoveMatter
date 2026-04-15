@@ -17,6 +17,7 @@ const defaultPlayback = (): PlaybackState => ({
   totalDurationMs: 0,
   speedMultiplier: 1,
   loop: false,
+  hasBuffer: false,
 })
 
 export const createPlaybackSlice = (set: any): PlaybackSlice => ({

@@ -61,7 +61,7 @@ export interface MoveMatterFile {
 
 // ─── Runtime-only (Zustand, never persisted) ─────────────────────────────────
 
-export type PlaybackStatus = 'idle' | 'playing' | 'paused'
+export type PlaybackStatus = 'idle' | 'playing' | 'paused' | 'computing'
 
 export interface PlaybackState {
   status: PlaybackStatus
@@ -69,6 +69,7 @@ export interface PlaybackState {
   totalDurationMs: number
   speedMultiplier: 0.25 | 0.5 | 1 | 2 | 4
   loop: boolean
+  hasBuffer: boolean    // true when a FrameBuffer exists and replay is available
 }
 
 export interface SimState {
