@@ -5,6 +5,7 @@ interface Props {
   step: MoveStep
   error?: string
   dragHandleProps?: React.HTMLAttributes<HTMLDivElement>
+  rowDropProps?: React.HTMLAttributes<HTMLDivElement>
 }
 
 function NumInput({
@@ -31,7 +32,7 @@ function NumInput({
   )
 }
 
-export function MoveRow({ step, error, dragHandleProps }: Props) {
+export function MoveRow({ step, error, dragHandleProps, rowDropProps }: Props) {
   const updateStep = useStore((s) => s.updateStep)
   const removeStep = useStore((s) => s.removeStep)
   const isScurve = step.profileType === 'scurve'
@@ -39,6 +40,7 @@ export function MoveRow({ step, error, dragHandleProps }: Props) {
 
   return (
     <div
+      {...rowDropProps}
       style={{
         background: 'var(--color-surface)',
         border: `1px solid ${error && !error.startsWith('Warning') ? '#f87171' : 'var(--color-border)'}`,

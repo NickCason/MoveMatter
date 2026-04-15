@@ -22,6 +22,10 @@ export function MoveList({ stepErrors }: Props) {
     dragIndexRef.current = index
   }
 
+  function handleDragEnd() {
+    dragIndexRef.current = null
+  }
+
   function handleDrop(targetIndex: number) {
     const from = dragIndexRef.current
     if (from === null || from === targetIndex) return
@@ -43,6 +47,10 @@ export function MoveList({ stepErrors }: Props) {
         const dragHandleProps = {
           draggable: true as const,
           onDragStart: () => handleDragStart(index),
+          onDragEnd: handleDragEnd,
+        }
+
+        const rowDropProps = {
           onDragOver: (e: React.DragEvent) => { e.preventDefault() },
           onDrop: () => handleDrop(index),
         }
@@ -53,6 +61,7 @@ export function MoveList({ stepErrors }: Props) {
             step={step}
             error={errorFor(step.id)}
             dragHandleProps={dragHandleProps}
+            rowDropProps={rowDropProps}
           />
         ) : (
           <DelayRow
@@ -60,6 +69,7 @@ export function MoveList({ stepErrors }: Props) {
             step={step}
             error={errorFor(step.id)}
             dragHandleProps={dragHandleProps}
+            rowDropProps={rowDropProps}
           />
         )
       })}

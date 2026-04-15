@@ -5,14 +5,16 @@ interface Props {
   step: DelayStep
   error?: string
   dragHandleProps?: React.HTMLAttributes<HTMLDivElement>
+  rowDropProps?: React.HTMLAttributes<HTMLDivElement>
 }
 
-export function DelayRow({ step, error, dragHandleProps }: Props) {
+export function DelayRow({ step, error, dragHandleProps, rowDropProps }: Props) {
   const updateStep = useStore((s) => s.updateStep)
   const removeStep = useStore((s) => s.removeStep)
 
   return (
     <div
+      {...rowDropProps}
       style={{
         background: 'var(--color-surface)',
         border: `1px solid ${error ? '#f87171' : 'var(--color-border)'}`,
